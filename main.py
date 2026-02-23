@@ -161,8 +161,13 @@ def generate_text(
     temperature: float = 0.3,
     top_p: float = 0.9,
     do_sample: bool = True,
+    seed: Optional[int] = None,
 ) -> str:
     """Apply chat template, generate, decode."""
+    if seed is not None:
+        torch.manual_seed(seed)
+        logger.info("random seed set to %d", seed)
+
     text = tokenizer.apply_chat_template(
         messages,
         tokenize=False,
@@ -273,6 +278,7 @@ def extract(
     top_p: float = 0.9,
     max_new_tokens: int = 32768,
     max_retries: int = 3,
+    seed: Optional[int] = None,
 ) -> BaseModel:
     """Single-pass extraction with Pydantic validation and hinted re-ask."""
     if model_cls is None:
@@ -292,6 +298,7 @@ def extract(
             max_new_tokens=max_new_tokens,
             temperature=temperature,
             top_p=top_p,
+            seed=seed,
         )
 
         # parse JSON
@@ -389,6 +396,7 @@ def parse_args() -> argparse.Namespace:
         help="Max new tokens to generate (default: 32768)",
     )
     ap.add_argument("--max-retries", type=int, default=3)
+    ap.add_argument("--seed", type=int, default=None, help="Random seed for reproducibility")
     ap.add_argument("--verbose", action="store_true")
     return ap.parse_args()
 
@@ -425,6 +433,7 @@ def main() -> None:
         top_p=args.top_p,
         max_new_tokens=args.max_new_tokens,
         max_retries=args.max_retries,
+        seed=args.seed,
     )
 
     # --- output ---
