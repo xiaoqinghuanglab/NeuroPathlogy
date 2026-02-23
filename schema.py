@@ -4,390 +4,268 @@ SINGLE SOURCE OF TRUTH — edit this file to change what gets extracted.
 main.py imports `get_extraction_model()` and `build_format_instructions()`
 and never hardcodes field names.
 
+Fields are drawn from the NACC Neuropathology (NP) data dictionary.
+Work with your PI before adding/removing variables.
+
 HOW TO ADD FIELDS:
   1. Add a field to the appropriate sub-model (or create a new one).
   2. Give it a `description=` — this auto-populates the LLM prompt.
   3. Add validators (range, enum, regex) — these auto-trigger on re-ask.
-  4. That's it.  The prompt and validation pipeline adapt automatically.
-
-See the commented-out examples below each sub-model for every supported type.
+  4. That's it. The prompt and validation pipeline adapt automatically.
 """
 
 from __future__ import annotations
 
-from datetime import date, datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional, Type, Union, get_args, get_origin
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-# ---------------------------------------------------------------------------
-# Enums — define constrained vocabularies here
-# ---------------------------------------------------------------------------
-
-
-class SpecimenType(str, Enum):
-    biopsy = "biopsy"
-    resection = "resection"
-    autopsy = "autopsy"
-    stereotactic_biopsy = "stereotactic_biopsy"
-    other = "other"
-
-
-class TumorGrade(str, Enum):
-    """WHO CNS5 grading."""
-
-    grade_1 = "1"
-    grade_2 = "2"
-    grade_3 = "3"
-    grade_4 = "4"
-    not_applicable = "N/A"
-
-
-class IDHStatus(str, Enum):
-    mutant = "IDH-mutant"
-    wildtype = "IDH-wildtype"
-    not_tested = "not_tested"
-    indeterminate = "indeterminate"
-
-
-class MGMTStatus(str, Enum):
-    methylated = "methylated"
-    unmethylated = "unmethylated"
-    not_tested = "not_tested"
-    indeterminate = "indeterminate"
-
-
-class OneP19QStatus(str, Enum):
-    codeleted = "codeleted"
-    intact = "intact"
-    not_tested = "not_tested"
-    indeterminate = "indeterminate"
-
-
-class EGFRStatus(str, Enum):
-    amplified = "amplified"
-    not_amplified = "not_amplified"
-    not_tested = "not_tested"
-    indeterminate = "indeterminate"
-
-
-class TERTStatus(str, Enum):
-    mutant = "mutant"
-    wildtype = "wildtype"
-    not_tested = "not_tested"
-    indeterminate = "indeterminate"
-
-
-class CDKN2AStatus(str, Enum):
-    deleted = "homozygously_deleted"
-    not_deleted = "not_deleted"
-    not_tested = "not_tested"
-    indeterminate = "indeterminate"
-
-
-class H3Status(str, Enum):
-    K27M_mutant = "H3K27M-mutant"
-    G34_mutant = "H3G34-mutant"
-    wildtype = "wildtype"
-    not_tested = "not_tested"
-    indeterminate = "indeterminate"
-
 
 # ---------------------------------------------------------------------------
-# Sub-models
+# Sub-models (grouped by NACC domain)
 # ---------------------------------------------------------------------------
 
-
-class PatientDemographics(BaseModel):
+class GrossFindings(BaseModel):
+    """NACC gross neuropathological findings."""
     model_config = ConfigDict(extra="forbid")
 
-    patient_name_last: Optional[str] = Field(
-        None, description="Patient last (family) name"
+    NPGRLA: Optional[int] = Field(
+        None,
+        description=(
+            "Lobar atrophy presence. "
+            "0=None, 1=Yes; also 8=not assessed, 9=unknown, -4=N/A."
+        ),
     )
-    patient_name_first: Optional[str] = Field(
-        None, description="Patient first (given) name"
+    NPGRHA: Optional[int] = Field(
+        None,
+        description=(
+            "Hippocampus atrophy severity. "
+            "0=None, 1=Mild, 2=Moderate, 3=Severe; also 8=not assessed, 9=unknown, -4=N/A."
+        ),
     )
-    date_of_birth: Optional[str] = Field(
-        None, description="Date of birth in YYYY-MM-DD format"
+    NPGRSNH: Optional[int] = Field(
+        None,
+        description=(
+            "Substantia nigra hypopigmentation severity. "
+            "0=None, 1=Mild, 2=Moderate, 3=Severe; also 8=not assessed, 9=unknown, -4=N/A."
+        ),
     )
-    age: Optional[int] = Field(None, ge=0, le=120, description="Patient age in years")
-    sex: Optional[str] = Field(None, description="Patient sex (M/F/Other)")
-    clinical_history_summary: Optional[str] = Field(
-        None, description="Brief clinical history as stated in the report"
+    NPGRLCH: Optional[int] = Field(
+        None,
+        description=(
+            "Locus coeruleus hypopigmentation severity. "
+            "0=None, 1=Mild, 2=Moderate, 3=Severe; also 8=not assessed, 9=unknown, -4=N/A."
+        ),
     )
 
-    @field_validator("date_of_birth")
-    @classmethod
-    def validate_dob_format(cls, v: Optional[str]) -> Optional[str]:
-        """Ensure DOB is a valid YYYY-MM-DD date string."""
-        if v is None:
-            return v
-        try:
-            date.fromisoformat(v)
-        except ValueError:
-            raise ValueError(f"date_of_birth must be YYYY-MM-DD, got '{v}'")
-        return v
-
-    # ----------------------------------------------------------------
-    # ILLUSTRATION: other field types you can add here
-    # ----------------------------------------------------------------
-    # # string with min/max length
-    # mrn: Optional[str] = Field(None, min_length=4, max_length=20,
-    #     description="Medical record number")
-    #
-    # # integer with range check
-    # weight_kg: Optional[int] = Field(None, ge=1, le=300,
-    #     description="Patient weight in kilograms")
-    #
-    # # float with range check
-    # height_cm: Optional[float] = Field(None, ge=30.0, le=250.0,
-    #     description="Patient height in centimeters")
-    #
-    # # boolean
-    # is_pregnant: Optional[bool] = Field(None,
-    #     description="Whether the patient is currently pregnant")
-    #
-    # # regex-validated string
-    # phone: Optional[str] = Field(None, pattern=r"^\d{3}-\d{3}-\d{4}$",
-    #     description="Phone number in XXX-XXX-XXXX format")
+    @model_validator(mode="after")
+    def validate_gross_codes(self) -> "GrossFindings":
+        la_valid  = {0, 1, 8, 9, -4}
+        sev_valid = {0, 1, 2, 3, 8, 9, -4}
+        checks = [
+            ("NPGRLA",  self.NPGRLA,  la_valid),
+            ("NPGRHA",  self.NPGRHA,  sev_valid),
+            ("NPGRSNH", self.NPGRSNH, sev_valid),
+            ("NPGRLCH", self.NPGRLCH, sev_valid),
+        ]
+        for fname, val, allowed in checks:
+            if val is not None and val not in allowed:
+                raise ValueError(f"{fname}={val} not in allowed codes {sorted(allowed)}")
+        return self
 
 
-class ReportMetadata(BaseModel):
-    """Timestamps and identifiers on the report itself."""
-
+class VascularPathology(BaseModel):
+    """NACC vascular neuropathological findings."""
     model_config = ConfigDict(extra="forbid")
 
-    report_date: Optional[str] = Field(
-        None, description="Date the report was issued, in YYYY-MM-DD format"
+    NACCAVAS: Optional[int] = Field(
+        None,
+        description=(
+            "Atherosclerosis severity. "
+            "0=None, 1=Mild, 2=Moderate, 3=Severe; also 8=not assessed, 9=unknown, -4=N/A."
+        ),
     )
-    report_time: Optional[str] = Field(
-        None, description="Time the report was issued, in HH:MM (24h) format"
+    NPLINF: Optional[int] = Field(
+        None,
+        description=(
+            "Lacunar infarcts presence. "
+            "0=Absent, 1=Present; also 8=not assessed, 9=unknown, -4=N/A."
+        ),
     )
-    accession_number: Optional[str] = Field(
-        None, description="Pathology accession/case number"
+    NPLAC: Optional[int] = Field(
+        None,
+        description=(
+            "Large vessel cortical infarcts presence. "
+            "0=Absent, 1=Present; also 8=not assessed, 9=unknown, -4=N/A."
+        ),
+    )
+    NPHEM: Optional[int] = Field(
+        None,
+        description=(
+            "Hemorrhage (micro or macro) presence. "
+            "0=Absent, 1=Present; also 8=not assessed, 9=unknown, -4=N/A."
+        ),
     )
 
-    @field_validator("report_date")
-    @classmethod
-    def validate_report_date(cls, v: Optional[str]) -> Optional[str]:
-        if v is None:
-            return v
-        try:
-            date.fromisoformat(v)
-        except ValueError:
-            raise ValueError(f"report_date must be YYYY-MM-DD, got '{v}'")
-        return v
-
-    @field_validator("report_time")
-    @classmethod
-    def validate_report_time(cls, v: Optional[str]) -> Optional[str]:
-        if v is None:
-            return v
-        try:
-            parts = v.split(":")
-            assert len(parts) == 2
-            h, m = int(parts[0]), int(parts[1])
-            assert 0 <= h <= 23 and 0 <= m <= 59
-        except (ValueError, AssertionError):
-            raise ValueError(f"report_time must be HH:MM (24h), got '{v}'")
-        return v
-
-    # ----------------------------------------------------------------
-    # ILLUSTRATION: date/time types
-    # ----------------------------------------------------------------
-    # # if you prefer native date objects (LLM still outputs string,
-    # # Pydantic coerces automatically):
-    # collection_date: Optional[date] = Field(None,
-    #     description="Specimen collection date")
-    #
-    # # full datetime
-    # received_datetime: Optional[datetime] = Field(None,
-    #     description="Specimen receipt datetime in ISO format")
+    @model_validator(mode="after")
+    def validate_vascular_codes(self) -> "VascularPathology":
+        sev_valid  = {0, 1, 2, 3, 8, 9, -4}
+        pres_valid = {0, 1, 8, 9, -4}
+        checks = [
+            ("NACCAVAS", self.NACCAVAS, sev_valid),
+            ("NPLINF",   self.NPLINF,   pres_valid),
+            ("NPLAC",    self.NPLAC,    pres_valid),
+            ("NPHEM",    self.NPHEM,    pres_valid),
+        ]
+        for fname, val, allowed in checks:
+            if val is not None and val not in allowed:
+                raise ValueError(f"{fname}={val} not in allowed codes {sorted(allowed)}")
+        return self
 
 
-class SpecimenInfo(BaseModel):
+class MicroscopicFindings(BaseModel):
+    """NACC microscopic neuropathological findings."""
     model_config = ConfigDict(extra="forbid")
 
-    specimen_type: Optional[SpecimenType] = Field(
+    NPWMR: Optional[int] = Field(
         None,
-        description="Type of specimen (biopsy, resection, autopsy, stereotactic_biopsy, other)",
+        description=(
+            "White matter rarefaction severity. "
+            "0=None, 1=Mild, 2=Moderate, 3=Severe; also 8=not assessed, 9=unknown, -4=N/A."
+        ),
     )
-    specimen_site: Optional[str] = Field(
-        None, description="Anatomical site (e.g., 'right frontal lobe')"
+    NPNLOSS: Optional[int] = Field(
+        None,
+        description=(
+            "Neuronal loss severity (cortical). "
+            "0=None, 1=Mild, 2=Moderate, 3=Severe; also 8=not assessed, 9=unknown, -4=N/A."
+        ),
     )
-    laterality: Optional[str] = Field(
-        None, description="Side: left, right, midline, bilateral, or not specified"
-    )
 
-    # ----------------------------------------------------------------
-    # ILLUSTRATION: enum field
-    # ----------------------------------------------------------------
-    # # just define a new Enum class above and use it:
-    # fixation: Optional[FixationType] = Field(None,
-    #     description="Fixation method used")
+    @model_validator(mode="after")
+    def validate_micro_codes(self) -> "MicroscopicFindings":
+        sev_valid = {0, 1, 2, 3, 8, 9, -4}
+        for fname, val in [("NPWMR", self.NPWMR), ("NPNLOSS", self.NPNLOSS)]:
+            if val is not None and val not in sev_valid:
+                raise ValueError(f"{fname}={val} not in allowed codes {sorted(sev_valid)}")
+        return self
 
 
-class MolecularMarkers(BaseModel):
-    """Key molecular/genetic markers per WHO CNS5."""
-
+class DiagnosticCodes(BaseModel):
+    """NACC diagnostic/etiological classification fields."""
     model_config = ConfigDict(extra="forbid")
 
-    idh_status: Optional[IDHStatus] = Field(None, description="IDH1/2 mutation status")
-    mgmt_promoter: Optional[MGMTStatus] = Field(
-        None, description="MGMT promoter methylation status"
-    )
-    one_p_19q: Optional[OneP19QStatus] = Field(
-        None, description="1p/19q codeletion status"
-    )
-    egfr_amplification: Optional[EGFRStatus] = Field(
-        None, description="EGFR amplification status"
-    )
-    tert_promoter: Optional[TERTStatus] = Field(
-        None, description="TERT promoter mutation status"
-    )
-    cdkn2a: Optional[CDKN2AStatus] = Field(
-        None, description="CDKN2A/B homozygous deletion status"
-    )
-    h3_status: Optional[H3Status] = Field(
-        None, description="Histone H3 alteration status"
-    )
-    ki67_index: Optional[float] = Field(
+    NACCCBD: Optional[int] = Field(
         None,
-        ge=0.0,
-        le=100.0,
-        description="Ki-67 proliferation index as percentage (0-100)",
+        description=(
+            "Corticobasal degeneration (CBD) subtype. "
+            "0=Absent, 1=CBD-NK (not otherwise specified), 2=CBD-AD (with AD), "
+            "3=CBD-PSP (with PSP), 4=CBD-FTLD-TDP, 5=CBD-Other; "
+            "also 8=not assessed, 9=unknown, -4=N/A."
+        ),
     )
-    p53_expression: Optional[str] = Field(
+    NPPVASC: Optional[int] = Field(
         None,
-        description="p53 IHC pattern (e.g., 'strong diffuse nuclear', 'wildtype pattern', 'null')",
-    )
-    atrx_expression: Optional[str] = Field(
-        None, description="ATRX expression status (retained / lost)"
-    )
-    other_markers: Optional[Dict[str, str]] = Field(
-        None, description="Additional molecular/IHC markers as {marker_name: result}"
+        description=(
+            "Primary vascular etiology. "
+            "0=No, 1=Yes; also 8=not assessed, 9=unknown, -4=N/A."
+        ),
     )
 
-    # ----------------------------------------------------------------
-    # ILLUSTRATION: dict and list fields
-    # ----------------------------------------------------------------
-    # # free-form key-value pairs
-    # fish_results: Optional[Dict[str, str]] = Field(None,
-    #     description="FISH results as {probe: result}")
-    #
-    # # list of strings
-    # mutations_detected: Optional[List[str]] = Field(None,
-    #     description="List of mutations detected by NGS panel")
-
-
-class HistopathologyFindings(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    morphological_description: Optional[str] = Field(
-        None, description="Key histological features described by the pathologist"
-    )
-    mitotic_count: Optional[str] = Field(
-        None, description="Mitotic count as reported (e.g., '5 per 10 HPF')"
-    )
-    necrosis_present: Optional[bool] = Field(
-        None, description="Whether necrosis is present"
-    )
-    microvascular_proliferation: Optional[bool] = Field(
-        None, description="Whether microvascular proliferation is present"
-    )
-    invasion_pattern: Optional[str] = Field(
-        None,
-        description="Invasion pattern if described (e.g., 'diffuse infiltration of cortex')",
-    )
-
-    # ----------------------------------------------------------------
-    # ILLUSTRATION: boolean + cross-field validator
-    # ----------------------------------------------------------------
-    # calcification_present: Optional[bool] = Field(None,
-    #     description="Whether calcification is present")
-    #
-    # @model_validator(mode="after")
-    # def necrosis_implies_high_grade(self) -> "HistopathologyFindings":
-    #     """Example: warn if necrosis is present without microvascular proliferation."""
-    #     if self.necrosis_present and not self.microvascular_proliferation:
-    #         # could raise ValueError to enforce, or just log a warning
-    #         pass
-    #     return self
-
-
-class Diagnosis(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    integrated_diagnosis: Optional[str] = Field(
-        None,
-        description="Final integrated WHO CNS5 diagnosis (e.g., 'Glioblastoma, IDH-wildtype, WHO grade 4')",
-    )
-    tumor_type: Optional[str] = Field(
-        None,
-        description="Tumor entity name (e.g., 'Glioblastoma', 'Oligodendroglioma')",
-    )
-    who_grade: Optional[TumorGrade] = Field(
-        None, description="WHO CNS tumor grade (1-4 or N/A)"
-    )
-    histological_subtype: Optional[str] = Field(
-        None, description="Histological subtype if specified"
-    )
-    additional_diagnoses: Optional[List[str]] = Field(
-        None, description="Any secondary or incidental diagnoses"
-    )
+    @model_validator(mode="after")
+    def validate_diag_codes(self) -> "DiagnosticCodes":
+        cbd_valid  = {0, 1, 2, 3, 4, 5, 8, 9, -4}
+        pvas_valid = {0, 1, 8, 9, -4}
+        if self.NACCCBD is not None and self.NACCCBD not in cbd_valid:
+            raise ValueError(f"NACCCBD={self.NACCCBD} not in {sorted(cbd_valid)}")
+        if self.NPPVASC is not None and self.NPPVASC not in pvas_valid:
+            raise ValueError(f"NPPVASC={self.NPPVASC} not in {sorted(pvas_valid)}")
+        return self
 
 
 # ---------------------------------------------------------------------------
 # Top-level extraction model
 # ---------------------------------------------------------------------------
 
-
 class NeuropathologyExtraction(BaseModel):
-    """Structured extraction from a single neuropathology report."""
+    """Structured extraction from a single NACC neuropathology report.
 
+    All numeric codes must match the allowed values listed in each field's
+    description. Use null if a field cannot be determined from the report.
+    """
     model_config = ConfigDict(extra="forbid")
 
-    patient: PatientDemographics = Field(
-        default_factory=PatientDemographics, description="Patient demographics"
+    # ── Specimen metadata ──────────────────────────────────────────────────
+    NPSEX: Optional[int] = Field(
+        None,
+        description="Subject sex. 1=Male, 2=Female.",
     )
-    report: ReportMetadata = Field(
-        default_factory=ReportMetadata, description="Report metadata (dates, IDs)"
+    NPFIX: Optional[int] = Field(
+        None,
+        description="Fixative used. 1=Formalin, 2=Paraformaldehyde, 7=Other; -4=N/A.",
     )
-    specimen: SpecimenInfo = Field(
-        default_factory=SpecimenInfo, description="Specimen information"
+    NPWBRWT: Optional[int] = Field(
+        None,
+        description=(
+            "Whole brain weight in grams (valid range 100–2500). "
+            "Use 9999 for unknown, -4 for N/A."
+        ),
     )
-    histopathology: HistopathologyFindings = Field(
-        default_factory=HistopathologyFindings, description="Histopathological findings"
-    )
-    molecular_markers: MolecularMarkers = Field(
-        default_factory=MolecularMarkers, description="Molecular and IHC markers"
-    )
-    diagnosis: Diagnosis = Field(
-        default_factory=Diagnosis, description="Diagnostic conclusions"
-    )
+
+    # ── Domain sub-models ──────────────────────────────────────────────────
+    gross_findings:       GrossFindings      = Field(default_factory=GrossFindings)
+    vascular_pathology:   VascularPathology  = Field(default_factory=VascularPathology)
+    microscopic_findings: MicroscopicFindings = Field(default_factory=MicroscopicFindings)
+    diagnostic_codes:     DiagnosticCodes    = Field(default_factory=DiagnosticCodes)
+
+    # ── Extraction meta ────────────────────────────────────────────────────
     extraction_confidence: Optional[str] = Field(
-        None, description="Overall confidence: high, moderate, or low"
+        None,
+        description="Overall confidence in this extraction: high, moderate, or low.",
     )
     extraction_notes: Optional[str] = Field(
-        None, description="Caveats, ambiguities, or unresolvable information"
+        None,
+        description="Caveats, ambiguities, or fields that could not be resolved.",
     )
+
+    @field_validator("NPSEX")
+    @classmethod
+    def validate_sex(cls, v: Optional[int]) -> Optional[int]:
+        if v is not None and v not in {1, 2}:
+            raise ValueError(f"NPSEX must be 1 (Male) or 2 (Female), got {v}")
+        return v
+
+    @field_validator("NPFIX")
+    @classmethod
+    def validate_fixative(cls, v: Optional[int]) -> Optional[int]:
+        if v is not None and v not in {1, 2, 7, -4}:
+            raise ValueError(f"NPFIX must be 1, 2, 7, or -4, got {v}")
+        return v
+
+    @field_validator("NPWBRWT")
+    @classmethod
+    def validate_brain_weight(cls, v: Optional[int]) -> Optional[int]:
+        if v is None:
+            return v
+        if v in {9999, -4}:          # special codes bypass range check
+            return v
+        if not (100 <= v <= 2500):
+            raise ValueError(f"NPWBRWT must be 100–2500 g (or 9999/-4), got {v}")
+        return v
 
     @model_validator(mode="after")
     def confidence_is_valid(self) -> "NeuropathologyExtraction":
         if self.extraction_confidence and self.extraction_confidence not in (
-            "high",
-            "moderate",
-            "low",
+            "high", "moderate", "low"
         ):
             raise ValueError("extraction_confidence must be high, moderate, or low")
         return self
 
 
 # ---------------------------------------------------------------------------
-# Public API — main.py imports only these
+# Public API — main.py imports only these two functions
 # ---------------------------------------------------------------------------
-
 
 def get_extraction_model() -> Type[BaseModel]:
     """Return the top-level extraction model class.
@@ -425,7 +303,7 @@ def describe_field(name: str, info, indent: int = 0) -> List[str]:
         lines.append(f"{prefix}- {name}{opt_tag}: {desc}. Allowed values: {allowed}")
         return lines
 
-    # nested BaseModel
+    # nested BaseModel — recurse
     if isinstance(inner, type) and issubclass(inner, BaseModel):
         lines.append(f"{prefix}- {name}: {desc}")
         for sub_name, sub_info in inner.model_fields.items():
@@ -462,11 +340,10 @@ def build_format_instructions(model: Optional[Type[BaseModel]] = None) -> str:
     ]
     for name, info in model.model_fields.items():
         lines.extend(describe_field(name, info, indent=0))
-    lines.append("")
-    lines.append(
-        "Use null for any field whose value cannot be determined from the report."
-    )
-    lines.append(
-        "Do not invent information. Extract only what is explicitly stated or clearly implied."
-    )
+    lines += [
+        "",
+        "Use null for any field whose value cannot be determined from the report.",
+        "Do not invent information. Extract only what is explicitly stated or clearly implied.",
+        "All numeric codes must be exact integers from the allowed set in each field description.",
+    ]
     return "\n".join(lines)

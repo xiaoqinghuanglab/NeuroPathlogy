@@ -109,13 +109,7 @@ def load_model(
     num_gpus: int = 1,
     dtype: str = "auto",
 ) -> tuple:
-    """Load model + tokenizer with automatic multi-GPU sharding.
-
-    Uses device_map='auto' to shard layers across available GPUs.
-
-    Returns:
-        (model, tokenizer) tuple
-    """
+    """Load model + tokenizer with automatic multi-GPU sharding."""
     available = torch.cuda.device_count()
     effective = min(num_gpus, available) if available > 0 else 0
     if effective > 0 and effective < available:
@@ -185,9 +179,11 @@ def generate_text(
             do_sample=do_sample,
             pad_token_id=tokenizer.pad_token_id,
         )
-    # strip prompt tokens
+    # strip prompt tokens, keep special tokens for channel parsing
     generated = outputs[0, inputs["input_ids"].shape[1] :]
-    return tokenizer.decode(generated, skip_special_tokens=True)
+    result = tokenizer.decode(generated, skip_special_tokens=False)
+    logger.debug("RAW MODEL OUTPUT: %r", result)
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -226,14 +222,44 @@ def build_messages(report_text: str, model_cls: Type[BaseModel]) -> list[dict]:
 
 
 def strip_json_fences(text: str) -> str:
-    """Remove ```json ... ``` wrappers if present."""
+    """Extract JSON from model output.
+    Handles gpt-oss channel format, ```json fences, and extra trailing data.
+    """
     text = text.strip()
+
+    # gpt-oss channel format: extract content from final channel
+    if "<|channel|>final<|message|>" in text:
+        start = text.find("<|channel|>final<|message|>") + len("<|channel|>final<|message|>")
+        end = text.find("<|end|>", start)
+        text = text[start:end].strip() if end != -1 else text[start:].strip()
+        logger.debug("Extracted from final channel: %r", text)
+
+    # handle <|return|> end token
+    if "<|return|>" in text:
+        text = text[:text.find("<|return|>")].strip()
+
+    # remove ```json fences
     if text.startswith("```json"):
         text = text[7:]
     elif text.startswith("```"):
         text = text[3:]
     if text.endswith("```"):
         text = text[:-3]
+
+    text = text.strip()
+
+    # handle extra data after JSON object — find the true end of the JSON
+    if text.startswith("{"):
+        depth = 0
+        for i, ch in enumerate(text):
+            if ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    text = text[: i + 1]
+                    break
+
     return text.strip()
 
 
@@ -248,10 +274,7 @@ def extract(
     max_new_tokens: int = 32768,
     max_retries: int = 3,
 ) -> BaseModel:
-    """Single-pass extraction with Pydantic validation and hinted re-ask.
-
-    On validation failure the error is fed back so the model can self-correct.
-    """
+    """Single-pass extraction with Pydantic validation and hinted re-ask."""
     if model_cls is None:
         model_cls = get_extraction_model()
 
@@ -273,13 +296,14 @@ def extract(
 
         # parse JSON
         cleaned = strip_json_fences(raw)
+        logger.debug("cleaned text for JSON parsing: %r", cleaned)
         try:
             content = json.loads(cleaned)
         except json.JSONDecodeError as e:
             last_error = e
             logger.warning("JSON decode failed: %s", e)
             current_messages = list(base_messages) + [
-                {"role": "assistant", "content": raw},
+                {"role": "assistant", "content": cleaned},
                 {
                     "role": "user",
                     "content": f"Your response was not valid JSON. Error: {e}. Output valid JSON only.",
@@ -296,7 +320,7 @@ def extract(
                 "Validation failed (%d errors): %s", e.error_count(), e.errors()
             )
             current_messages = list(base_messages) + [
-                {"role": "assistant", "content": raw},
+                {"role": "assistant", "content": cleaned},
                 {
                     "role": "user",
                     "content": (
