@@ -30,7 +30,7 @@ import torch
 from pydantic import BaseModel, ValidationError
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-from schema import build_format_instructions, get_extraction_model
+from schema_full import build_format_instructions, get_extraction_model
 
 logger = logging.getLogger("medace")
 
