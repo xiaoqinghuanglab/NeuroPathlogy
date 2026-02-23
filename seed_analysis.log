@@ -1,0 +1,224 @@
+
+===========================================================================
+PDF: 6368 copy
+===========================================================================
+
+VARIABLE                         seed42  seed123  seed456  seed789  seed1011
+---------------------------------------------------------------------------
+NACCAMY                            None        3        3        3         3
+NACCARTE                              2     None        3        3         2
+NACCAVAS                              2     None        3        3         2
+NACCBRAA                              1     None        1        1      None
+NACCCBD                            None     None     None        0      None
+NACCDIFF                           None     None        3        3      None
+NACCINF                               0        0        0        0         0
+NACCLEWY                              0        0        0        0      None
+NACCNEUR                              0     None        0        0      None
+NACCPICK                           None     None     None        0      None
+NACCPRIO                              0        0        0        0         0
+NACCPROG                           None     None     None        0      None
+NACCVASC                              1        1        1        1         1
+NPADNC                             None        1        1        1         1
+NPCAD                              None        2        1        1         2
+NPCVASC                            None        2        1        1         1
+NPFIX                                 1        1        1        1         1
+NPFIXX                             None     None     None     None      None
+NPFTDTAU                           None     None     None        0      None
+NPFTDTDP                           None     None     None        0      None
+NPGRCCA                            None     None     None     None      None
+NPGRHA                             None     None     None     None      None
+NPGRLA                                1        1        1     None         1
+NPGRLCH                               0        0        0        0         0
+NPGRSNH                               3     None        3        3      None
+NPHEM                              None        3     None        2      None
+NPHIPSCL                           None     None     None        0      None
+NPLAC                              None        3     None        2      None
+NPLBOD                                0        0        0        0      None
+NPLINF                             None        3     None        2      None
+NPNLOSS                               3     None        3        3      None
+NPPAD                                 1        1        1        2         1
+NPPFTLD                               2        2        2        2         2
+NPPLEWY                               2        2        2        2         2
+NPPMIH                             None     None     None     None      None
+NPPVASC                               1        1        1        2         2
+NPSEX                              None     None     None     None      None
+NPTHAL                                3     None        3        3      None
+NPWBRF                                1        1        1        1         1
+NPWBRWT                             992      992      992      992       992
+NPWMR                              None        3     None        0      None
+
+                             CONSISTENCY TABLE                             
+---------------------------------------------------------------------------
+VARIABLE                       CONSISTENCY
+---------------------------------------------------------------------------
+NACCAMY                        80% -> 3
+NACCARTE                       40% -> 2
+NACCAVAS                       40% -> 2
+NACCBRAA                       60% -> 1
+NACCCBD                        20% -> 0
+NACCDIFF                       40% -> 3
+NACCINF                        100% -> 0
+NACCLEWY                       80% -> 0
+NACCNEUR                       60% -> 0
+NACCPICK                       20% -> 0
+NACCPRIO                       100% -> 0
+NACCPROG                       20% -> 0
+NACCVASC                       100% -> 1
+NPADNC                         80% -> 1
+NPCAD                          40% -> 1
+NPCVASC                        60% -> 1
+NPFIX                          100% -> 1
+NPFIXX                         N/A (all null)
+NPFTDTAU                       20% -> 0
+NPFTDTDP                       20% -> 0
+NPGRCCA                        N/A (all null)
+NPGRHA                         N/A (all null)
+NPGRLA                         80% -> 1
+NPGRLCH                        100% -> 0
+NPGRSNH                        60% -> 3
+NPHEM                          20% -> 2
+NPHIPSCL                       20% -> 0
+NPLAC                          20% -> 2
+NPLBOD                         80% -> 0
+NPLINF                         20% -> 2
+NPNLOSS                        60% -> 3
+NPPAD                          80% -> 1
+NPPFTLD                        100% -> 2
+NPPLEWY                        100% -> 2
+NPPMIH                         N/A (all null)
+NPPVASC                        60% -> 1
+NPSEX                          N/A (all null)
+NPTHAL                         60% -> 3
+NPWBRF                         100% -> 1
+NPWBRWT                        100% -> 992
+NPWMR                          20% -> 0
+
+===========================================================================
+PDF: 6384 copy
+===========================================================================
+
+VARIABLE                         seed42  seed123  seed456  seed789  seed1011
+---------------------------------------------------------------------------
+NACCAVAS                              0        0        0        0         0
+NACCCBD                               0     None        0     None      None
+NPFIX                                 1        1        1        1         1
+NPGRHA                                3        3        3        3         3
+NPGRLA                                1        1        1        1         1
+NPGRLCH                               2        2        2        2         2
+NPGRSNH                               2        2        2        2         2
+NPHEM                                 0     None     None     None      None
+NPLAC                                 0     None     None     None      None
+NPLINF                                0     None     None     None      None
+NPNLOSS                               3        3        3        3         3
+NPPVASC                               0     None        0     None      None
+NPSEX                              None     None     None     None      None
+NPWBRWT                            1115     1115     1115     1115      1115
+NPWMR                                 2     None     None        2      None
+
+                             CONSISTENCY TABLE                             
+---------------------------------------------------------------------------
+VARIABLE                       CONSISTENCY
+---------------------------------------------------------------------------
+NACCAVAS                       100% -> 0
+NACCCBD                        40% -> 0
+NPFIX                          100% -> 1
+NPGRHA                         100% -> 3
+NPGRLA                         100% -> 1
+NPGRLCH                        100% -> 2
+NPGRSNH                        100% -> 2
+NPHEM                          20% -> 0
+NPLAC                          20% -> 0
+NPLINF                         20% -> 0
+NPNLOSS                        100% -> 3
+NPPVASC                        40% -> 0
+NPSEX                          N/A (all null)
+NPWBRWT                        100% -> 1115
+NPWMR                          40% -> 2
+
+===========================================================================
+PDF: 6472 copy
+===========================================================================
+
+VARIABLE                         seed42  seed123  seed456  seed789  seed1011
+---------------------------------------------------------------------------
+NACCAVAS                              0        0        0        0         0
+NACCCBD                               1        1        1        1         1
+NPFIX                              None        1        1        1         1
+NPGRHA                                3        3        3        3         3
+NPGRLA                                1        1        1        1         1
+NPGRLCH                               3        3        3        3         3
+NPGRSNH                               3        3        3        3         3
+NPHEM                                 0        0     None        1         1
+NPLAC                              None     None     None     None      None
+NPLINF                             None     None     None     None      None
+NPNLOSS                               3        3        3        3         3
+NPPVASC                               0        0     None     None      None
+NPSEX                              None     None     None     None      None
+NPWBRWT                            1006     1006     1006     1006      1006
+NPWMR                                 3        3        3        3         3
+
+                             CONSISTENCY TABLE                             
+---------------------------------------------------------------------------
+VARIABLE                       CONSISTENCY
+---------------------------------------------------------------------------
+NACCAVAS                       100% -> 0
+NACCCBD                        100% -> 1
+NPFIX                          80% -> 1
+NPGRHA                         100% -> 3
+NPGRLA                         100% -> 1
+NPGRLCH                        100% -> 3
+NPGRSNH                        100% -> 3
+NPHEM                          40% -> 0
+NPLAC                          N/A (all null)
+NPLINF                         N/A (all null)
+NPNLOSS                        100% -> 3
+NPPVASC                        40% -> 0
+NPSEX                          N/A (all null)
+NPWBRWT                        100% -> 1006
+NPWMR                          100% -> 3
+
+===========================================================================
+PDF: 6473 copy
+===========================================================================
+
+VARIABLE                         seed42  seed123  seed456  seed789  seed1011
+---------------------------------------------------------------------------
+NACCAVAS                              3        3        3        3         3
+NACCCBD                            None     None     None     None      None
+NPFIX                                 1        1        1        1         1
+NPGRHA                             None     None     None     None      None
+NPGRLA                                1        1        1        1         1
+NPGRLCH                               1        1        1        1         1
+NPGRSNH                            None     None     None     None      None
+NPHEM                              None     None     None     None      None
+NPLAC                              None     None     None     None      None
+NPLINF                             None     None     None     None      None
+NPNLOSS                               3        3        3        3         3
+NPPVASC                               1     None     None     None         1
+NPSEX                              None     None     None     None      None
+NPWBRWT                            1219     1219     1219     1219      1219
+NPWMR                              None     None     None     None      None
+
+                             CONSISTENCY TABLE                             
+---------------------------------------------------------------------------
+VARIABLE                       CONSISTENCY
+---------------------------------------------------------------------------
+NACCAVAS                       100% -> 3
+NACCCBD                        N/A (all null)
+NPFIX                          100% -> 1
+NPGRHA                         N/A (all null)
+NPGRLA                         100% -> 1
+NPGRLCH                        100% -> 1
+NPGRSNH                        N/A (all null)
+NPHEM                          N/A (all null)
+NPLAC                          N/A (all null)
+NPLINF                         N/A (all null)
+NPNLOSS                        100% -> 3
+NPPVASC                        40% -> 1
+NPSEX                          N/A (all null)
+NPWBRWT                        100% -> 1219
+NPWMR                          N/A (all null)
+
+===========================================================================
+DONE
+===========================================================================
