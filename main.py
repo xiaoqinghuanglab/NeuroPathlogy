@@ -196,19 +196,35 @@ def generate_text(
 # ---------------------------------------------------------------------------
 
 SYSTEM_PROMPT = """\
-You are a clinical NLP system specializing in neuropathology report extraction.
-Read the neuropathology report and extract structured data into JSON.
+You are a clinical NLP system that extracts structured NACC neuropathology variables from autopsy reports.
 
 {format_instructions}
 
-RULES:
-- Extract only what is explicitly stated or clearly implied.
-- Use null for any field that cannot be determined.
-- Do not hallucinate.  If a molecular test is not mentioned, use "not_tested".
-- For Ki-67, extract the numeric percentage (e.g., 30 not 0.30).
-- For dates, use YYYY-MM-DD format.  For times, use HH:MM 24-hour format.
-- For patient name, extract Last and First separately.
-- Output valid JSON only — no markdown fences, no commentary."""
+EXTRACTION RULES:
+- Extract only what is explicitly stated or clearly implied by the report text.
+- Use null for any field not determinable from the report.
+- Do not hallucinate values. If a structure is not mentioned, do not infer its status.
+- All numeric codes must be exact integers from the allowed set in each field's description.
+- For NPWBRWT: extract as an integer gram value (e.g. 1200, not 1200.5). Round if needed.
+- For severity scales: map report language carefully:
+    "mild" → 1, "moderate" → 2, "severe" → 3, "no/none/absent" → 0.
+    "moderate to severe" or "moderately severe" → 3 (Severe).
+- For PresentAbsent fields (NPLINF, NPLAC, NPHEM): 1=Present/Yes, 2=Absent/No.
+
+ANNOTATION RULES (field_annotations):
+- For every non-null field you extract, add an entry in field_annotations keyed by the variable name.
+- evidence: copy the exact phrase or sentence from the report that drove your decision.
+- note: write a brief reasoning note ONLY when the extraction required judgment (indirect language,
+  ambiguous severity, conflicting statements). Leave null for clear-cut extractions.
+- confidence: assign a float 0.0–1.0 reflecting how certain you are:
+    1.0 = exact match, unambiguous language
+    0.8 = clearly implied, minor paraphrase
+    0.6 = indirect or requires inference
+    0.4 = ambiguous, best guess among plausible codes
+    below 0.4 = consider leaving field null instead
+
+OUTPUT: valid JSON only — no markdown fences, no commentary before or after the JSON object.\
+"""
 
 USER_PROMPT = "NEUROPATHOLOGY REPORT:\n\n{report_text}"
 
@@ -234,14 +250,16 @@ def strip_json_fences(text: str) -> str:
 
     # gpt-oss channel format: extract content from final channel
     if "<|channel|>final<|message|>" in text:
-        start = text.find("<|channel|>final<|message|>") + len("<|channel|>final<|message|>")
+        start = text.find("<|channel|>final<|message|>") + len(
+            "<|channel|>final<|message|>"
+        )
         end = text.find("<|end|>", start)
         text = text[start:end].strip() if end != -1 else text[start:].strip()
         logger.debug("Extracted from final channel: %r", text)
 
     # handle <|return|> end token
     if "<|return|>" in text:
-        text = text[:text.find("<|return|>")].strip()
+        text = text[: text.find("<|return|>")].strip()
 
     # remove ```json fences
     if text.startswith("```json"):
@@ -396,7 +414,9 @@ def parse_args() -> argparse.Namespace:
         help="Max new tokens to generate (default: 32768)",
     )
     ap.add_argument("--max-retries", type=int, default=3)
-    ap.add_argument("--seed", type=int, default=None, help="Random seed for reproducibility")
+    ap.add_argument(
+        "--seed", type=int, default=None, help="Random seed for reproducibility"
+    )
     ap.add_argument("--verbose", action="store_true")
     return ap.parse_args()
 
