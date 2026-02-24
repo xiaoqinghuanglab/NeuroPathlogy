@@ -158,21 +158,23 @@ def generate_text(
     messages: list[dict],
     *,
     max_new_tokens: int = 32768,
-    temperature: float = 0.3,
+    temperature: float = 0.01,
     top_p: float = 0.9,
     do_sample: bool = True,
     seed: Optional[int] = None,
+    reasoning_effort: Optional[str] = None,
 ) -> str:
     """Apply chat template, generate, decode."""
     if seed is not None:
         torch.manual_seed(seed)
         logger.info("random seed set to %d", seed)
 
-    text = tokenizer.apply_chat_template(
-        messages,
-        tokenize=False,
-        add_generation_prompt=True,
-    )
+    template_kwargs: dict = {"tokenize": False, "add_generation_prompt": True}
+    if reasoning_effort is not None:
+        template_kwargs["reasoning_effort"] = reasoning_effort
+        logger.info("reasoning_effort=%s", reasoning_effort)
+
+    text = tokenizer.apply_chat_template(messages, **template_kwargs)
     inputs = tokenizer(text, return_tensors="pt").to(model.device)
 
     with torch.no_grad():
@@ -205,7 +207,7 @@ EXTRACTION RULES:
 - Use null for any field not determinable from the report.
 - Do not hallucinate values. If a structure is not mentioned, do not infer its status.
 - All numeric codes must be exact integers from the allowed set in each field's description.
-- For NPWBRWT: extract as an integer gram value (e.g. 1200, not 1200.5). Round if needed.
+- For NPWBRWT: extract the numeric value in grams as a float (e.g. 991.7, 1200.0).
 - For severity scales: map report language carefully:
     "mild" → 1, "moderate" → 2, "severe" → 3, "no/none/absent" → 0.
     "moderate to severe" or "moderately severe" → 3 (Severe).
@@ -292,11 +294,12 @@ def extract(
     tokenizer,
     *,
     model_cls: Optional[Type[BaseModel]] = None,
-    temperature: float = 0.3,
+    temperature: float = 0.01,
     top_p: float = 0.9,
     max_new_tokens: int = 32768,
     max_retries: int = 3,
     seed: Optional[int] = None,
+    reasoning_effort: Optional[str] = None,
 ) -> BaseModel:
     """Single-pass extraction with Pydantic validation and hinted re-ask."""
     if model_cls is None:
@@ -317,6 +320,7 @@ def extract(
             temperature=temperature,
             top_p=top_p,
             seed=seed,
+            reasoning_effort=reasoning_effort,
         )
 
         # parse JSON
@@ -405,7 +409,7 @@ def parse_args() -> argparse.Namespace:
         choices=["text", "pdf"],
         help="Override auto-detected input format",
     )
-    ap.add_argument("--temperature", type=float, default=0.3)
+    ap.add_argument("--temperature", type=float, default=0.01)
     ap.add_argument("--top-p", type=float, default=0.9)
     ap.add_argument(
         "--max-new-tokens",
@@ -416,6 +420,13 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--max-retries", type=int, default=3)
     ap.add_argument(
         "--seed", type=int, default=None, help="Random seed for reproducibility"
+    )
+    ap.add_argument(
+        "--reasoning-effort",
+        type=str,
+        default="medium",
+        choices=["low", "medium", "high"],
+        help="Reasoning effort for gpt-oss models (default: medium; ignored by other models)",
     )
     ap.add_argument("--verbose", action="store_true")
     return ap.parse_args()
@@ -454,6 +465,7 @@ def main() -> None:
         max_new_tokens=args.max_new_tokens,
         max_retries=args.max_retries,
         seed=args.seed,
+        reasoning_effort=args.reasoning_effort,
     )
 
     # --- output ---
