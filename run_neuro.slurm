@@ -31,20 +31,19 @@ module load cudatoolkit/12.2
 if [ ! -d "$VENV" ]; then
     echo "[setup] Creating virtual environment at $VENV"
     python -m venv "$VENV"
+    source "$VENV/bin/activate"
+    echo "[setup] Installing dependencies..."
+    pip install --upgrade pip -q
+    pip install -r "$PROJECT/requirements.txt" -q
+else
+    source "$VENV/bin/activate"
 fi
-source "$VENV/bin/activate"
-
-# ── Dependencies ───────────────────────────────────────────────────────────
-echo "[setup] Installing/updating dependencies..."
-pip install --upgrade pip -q
-pip install -r "$PROJECT/requirements.txt" -q
 
 # ── HuggingFace token ──────────────────────────────────────────────────────
 export HF_TOKEN=$(cat ~/.hf_token)
 
 # ── HuggingFace cache → Slate ─────────────────────────────────────────────
 export HF_HOME=/N/project/SingleCell_Image/Ankita/hf_cache
-export TRANSFORMERS_CACHE=$HF_HOME
 export HF_HUB_ENABLE_HF_TRANSFER=1
 mkdir -p "$HF_HOME"
 
@@ -57,7 +56,7 @@ MODEL_ALIAS="oss-20b"
 NUM_GPUS=1
 
 # ── Seeds ─────────────────────────────────────────────────────────────────
-SEEDS=(42 123 456 789 1011)
+SEEDS=(0 1 2 3 4)
 
 # ── Run extraction ─────────────────────────────────────────────────────────
 echo "[run] Starting batch extraction at $(date)"
@@ -78,16 +77,17 @@ for REPORT in "$REPORTS"/*.pdf "$REPORTS"/*.txt; do
 
         echo "[extract] $BASENAME seed=$SEED → $OUT_FILE"
         python "$PROJECT/main.py" \
-            --input          "$REPORT"      \
-            --output         "$OUT_FILE"    \
-            --model          "$MODEL_ALIAS" \
-            --seed           $SEED          \
-            --num-gpus       "$NUM_GPUS"    \
-            --dtype          auto           \
-            --temperature    0.3            \
-            --top-p          0.9            \
-            --max-new-tokens 4096           \
-            --max-retries    3
+            --input             "$REPORT"      \
+            --output            "$OUT_FILE"    \
+            --model             "$MODEL_ALIAS" \
+            --seed              $SEED          \
+            --num-gpus          "$NUM_GPUS"    \
+            --dtype             auto           \
+            --temperature       0.01           \
+            --top-p             0.9            \
+            --reasoning-effort  medium         \
+            --max-new-tokens    16384          \
+            --max-retries       3
     done
 done
 
