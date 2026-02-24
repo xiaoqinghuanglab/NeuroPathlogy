@@ -1,6 +1,6 @@
 # Neuropathology Report Extractor
 
-Structured data extraction from neuropathology reports using local HuggingFace models with schema-driven prompting and self-correcting validation.
+Structured data extraction from NACC neuropathology autopsy reports using local HuggingFace models with schema-driven prompting, self-correcting validation, and per-field extraction audit trails.
 
 ## What It Does
 
@@ -11,15 +11,16 @@ Given a neuropathology report (PDF or plain text), this tool:
 3. Sends it to a locally-loaded LLM on your GPUs
 4. Validates the output against the schema with Pydantic
 5. If validation fails, feeds the errors back to the LLM and re-asks (up to N retries)
-6. Writes a clean JSON file
+6. Writes a clean JSON file with extracted variables and per-field annotations
 
-The key idea: **`schema.py` is the single source of truth.** You define what to extract there — field names, types, constraints, enums — and the pipeline auto-generates the LLM prompt, validates the output, and handles retries. No prompt editing needed.
+The key idea: **`schema_full.py` is the single source of truth.** You define what to extract there — field names, types, constraints, enums, descriptions — and the pipeline auto-generates the LLM prompt, validates the output, and handles retries. No prompt editing needed.
 
 ## Project Structure
 
 ```
-├── main.py       # CLI entry point: load model, run extraction, write JSON
-├── schema.py     # Pydantic schema: defines all fields, types, validators
+├── main.py          # CLI entry point: load model, run extraction, write JSON
+├── schema_full.py   # Pydantic schema: defines all 40 NACC fields, validators, descriptions
+├── analyze_seeds.py # Consistency analysis across multi-seed runs
 └── README.md
 ```
 
@@ -46,8 +47,8 @@ pip install pdfplumber    # pure-python alternative
 
 | Alias | HuggingFace Model ID | Notes |
 |---|---|---|
-| `oss-120b` | `openai/gpt-oss-120b` | MoE, strongest extraction quality |
-| `oss-20b` | `openai/gpt-oss-20b` | MoE, good balance of speed and quality |
+| `oss-120b` | `openai/gpt-oss-120b` | MoE, strongest extraction quality; supports `--reasoning-effort` |
+| `oss-20b` | `openai/gpt-oss-20b` | MoE, good balance of speed and quality; supports `--reasoning-effort` |
 | `llama3.1-8b` | `meta-llama/Llama-3.1-8B-Instruct` | Dense, fastest inference |
 
 You can also pass any full HuggingFace model ID directly (e.g., `-m mistralai/Mistral-7B-Instruct-v0.3`).
@@ -76,143 +77,186 @@ python main.py -i report.pdf -m llama3.1-8b -o results/patient_001.json
 
 ```bash
 python main.py \
-  -i report.pdf \              # input file (required)
-  -m oss-120b \                # model alias or full HF ID (required)
-  --num-gpus 4 \               # number of GPUs (default: 1)
-  --dtype bfloat16 \           # model dtype: auto, bfloat16, float16 (default: auto)
-  --input-format pdf \         # force input format: text or pdf (default: auto-detect)
-  --temperature 0.3 \          # sampling temperature (default: 0.3)
-  --top-p 0.9 \                # nucleus sampling top-p (default: 0.9)
-  --max-new-tokens 32768 \     # max tokens to generate (default: 32768)
-  --max-retries 3 \            # validation retry attempts (default: 3)
-  --verbose \                  # debug logging
-  -o output.json               # output path (default: <input>.extracted.json)
+  -i report.pdf \                   # input file (required)
+  -m oss-120b \                     # model alias or full HF ID (required)
+  --num-gpus 4 \                    # number of GPUs (default: 1)
+  --dtype bfloat16 \                # model dtype: auto, bfloat16, float16 (default: auto)
+  --input-format pdf \              # force input format: text or pdf (default: auto-detect)
+  --temperature 0.01 \              # sampling temperature (default: 0.01)
+  --top-p 0.9 \                     # nucleus sampling top-p (default: 0.9)
+  --reasoning-effort medium \       # reasoning effort for gpt-oss models: low/medium/high (default: medium)
+  --max-new-tokens 32768 \          # max tokens to generate (default: 32768)
+  --max-retries 3 \                 # validation retry attempts (default: 3)
+  --seed 42 \                       # random seed for reproducibility
+  --verbose \                       # debug logging
+  -o output.json                    # output path (default: <input>.extracted.json)
 ```
 
 ## Output Format
 
-The output is a JSON file matching the schema defined in `schema.py`. Example:
+The output is a JSON file with two layers: the extracted NACC variables (nested by domain) and a `field_annotations` block that records the evidence and confidence for every extracted value.
 
 ```json
 {
-  "patient": {
-    "patient_name_last": "Smith",
-    "patient_name_first": "John",
-    "date_of_birth": "1958-03-12",
-    "age": 67,
-    "sex": "M",
-    "clinical_history_summary": "Progressive headaches and left-sided weakness for 3 weeks."
+  "specimen_info": {
+    "NPSEX": 1,
+    "NPFIX": 1,
+    "NPWBRWT": 1219.2,
+    "NPWBRF": 1,
+    "NPPMIH": null,
+    "NPFIXX": null
   },
-  "report": {
-    "report_date": "2025-01-15",
-    "report_time": "14:30",
-    "accession_number": "S25-1234"
+  "gross_findings": {
+    "NPGRLA": 1,
+    "NPGRHA": 2,
+    "NPGRSNH": 1,
+    "NPGRLCH": 1,
+    "NPGRCCA": null,
+    "NACCBRNN": 0
   },
-  "specimen": {
-    "specimen_type": "resection",
-    "specimen_site": "right frontal lobe",
-    "laterality": "right"
+  "vascular_pathology": {
+    "NACCAVAS": 2,
+    "NPLINF": 2,
+    "NPLAC": 2,
+    "NPHEM": 2,
+    "NPWMR": 1,
+    "NACCARTE": 3,
+    "NACCVASC": 1,
+    "NACCINF": 0,
+    "NACCHEM": 0
   },
-  "histopathology": {
-    "morphological_description": "Highly cellular glial neoplasm with nuclear atypia...",
-    "mitotic_count": "12 per 10 HPF",
-    "necrosis_present": true,
-    "microvascular_proliferation": true,
-    "invasion_pattern": "diffuse infiltration of adjacent cortex"
+  "microscopic_findings": {
+    "NPNLOSS": 1,
+    "NPHIPSCL": null,
+    "NACCLEWY": 0,
+    "NPLBOD": 0
   },
-  "molecular_markers": {
-    "idh_status": "IDH-wildtype",
-    "mgmt_promoter": "unmethylated",
-    "one_p_19q": "intact",
-    "egfr_amplification": "amplified",
-    "tert_promoter": "mutant",
-    "cdkn2a": "homozygously_deleted",
-    "h3_status": "wildtype",
-    "ki67_index": 30.0,
-    "p53_expression": "strong diffuse nuclear",
-    "atrx_expression": "retained",
-    "other_markers": null
+  "ad_pathology": {
+    "NPTHAL": null,
+    "NACCBRAA": null,
+    "NACCNEUR": null,
+    "NPADNC": null,
+    "NACCDIFF": null,
+    "NACCAMY": null
   },
-  "diagnosis": {
-    "integrated_diagnosis": "Glioblastoma, IDH-wildtype, WHO grade 4",
-    "tumor_type": "Glioblastoma",
-    "who_grade": "4",
-    "histological_subtype": null,
-    "additional_diagnoses": null
+  "diagnostic_codes": {
+    "NACCCBD": 0,
+    "NPPVASC": 1,
+    "NPPAD": 2,
+    "NPCAD": 2,
+    "NPPLEWY": 2,
+    "NPCLEWY": 2,
+    "NPCVASC": 1,
+    "NPPFTLD": 2,
+    "NACCPROG": 0,
+    "NACCPICK": 0,
+    "NPFTDTDP": 0,
+    "NACCPRIO": 0
   },
-  "extraction_confidence": "high",
+  "field_annotations": {
+    "NPSEX": {
+      "confidence": 1.0,
+      "evidence": "71-year-old male",
+      "note": null
+    },
+    "NPWBRWT": {
+      "confidence": 1.0,
+      "evidence": "Brain weight: 1219.2 g (fixed)",
+      "note": null
+    },
+    "NACCAVAS": {
+      "confidence": 0.8,
+      "evidence": "moderate atherosclerosis of the circle of Willis",
+      "note": null
+    },
+    "NPGRSNH": {
+      "confidence": 0.6,
+      "evidence": "mild pallor of the substantia nigra",
+      "note": "Report says 'mild pallor' — coded as 1 (Mild). Some residual pigmentation visible."
+    }
+  },
+  "extraction_confidence": "moderate",
   "extraction_notes": null
 }
 ```
 
-Fields the LLM cannot determine from the report will be `null`.
+Fields the LLM cannot determine from the report are `null`. `field_annotations` contains an entry for every non-null field, and for ambiguous null fields where the absence was itself uncertain.
+
+### Understanding `field_annotations`
+
+Each entry has three keys:
+
+| Key | Type | Meaning |
+|---|---|---|
+| `confidence` | float 0–1 | Certainty the value is correct. ≥0.8 = unambiguous; 0.6–0.8 = inferred; <0.6 = review recommended |
+| `evidence` | string | Verbatim phrase from the report that drove the extraction decision |
+| `note` | string or null | Reasoning note — only populated when the extraction required judgment (ambiguous language, severity mapping, conflicting statements). Null for straightforward extractions |
+
+Use `confidence < 0.7` as a filter to identify fields needing human review.
+
+## Multi-Seed Consistency Analysis
+
+Running the same report with multiple random seeds tests extraction stability. Use `analyze_seeds.py` to compare outputs:
+
+```bash
+# Run 5 seeds
+for seed in 42 123 456 789 1011; do
+    python main.py -i report.pdf -m oss-20b \
+        --seed $seed -o output/report_seed${seed}.extracted.json
+done
+
+# Compare
+python analyze_seeds.py --output-dir output
+```
+
+High consistency (≥80% majority agreement) across seeds indicates reliable extraction. Low consistency on a variable, combined with low `confidence` in `field_annotations`, pinpoints where the report language is genuinely ambiguous.
 
 ## Customizing the Schema
 
-All extraction fields live in `schema.py`. The pipeline reads the schema at runtime, so changes take effect immediately — no prompt editing required.
+All extraction fields live in `schema_full.py`. The pipeline reads the schema at runtime, so changes take effect immediately.
 
 ### Adding a new field
 
 Add it to the relevant sub-model with a `Field(description=...)`:
 
 ```python
-class PatientDemographics(BaseModel):
+class SpecimenInfo(BaseModel):
     # ... existing fields ...
-    mrn: Optional[str] = Field(None, min_length=4, max_length=20,
-        description="Medical record number")
+    NPBRNWT_FRESH: Optional[float] = Field(
+        None,
+        description="Fresh (pre-fixation) brain weight in grams. Range 100–2500."
+    )
 ```
 
-The `description` string is what the LLM sees in its instructions. Make it specific.
+The `description` string is what the LLM sees. Make it specific: include the full code table, example report phrases, and any disambiguation notes.
 
 ### Supported field types
 
-`schema.py` includes commented-out examples for each type. Here's a summary:
-
 | Type | Example | Validation |
 |---|---|---|
-| **String** | `Field(None, description="...")` | Optional min/max length, regex pattern |
-| **Integer** | `Field(None, ge=0, le=120, ...)` | Range via `ge`/`le` |
-| **Float** | `Field(None, ge=0.0, le=100.0, ...)` | Range via `ge`/`le` |
+| **Integer** | `Field(None, description="...")` | Range via `ge`/`le`; enum via `@field_validator` |
+| **Float** | `Field(None, ge=0.0, le=2500.0, ...)` | Range via `ge`/`le` |
 | **Boolean** | `Field(None, description="...")` | True/False |
-| **Enum** | `Field(None, description="...")` | Restricted to enum values |
-| **Date string** | `Field(None, description="...YYYY-MM-DD...")` | `@field_validator` |
-| **Time string** | `Field(None, description="...HH:MM...")` | `@field_validator` |
+| **Enum** | `Optional[SeverityCode]` | Restricted to enum values; allowed list auto-rendered in prompt |
+| **String** | `Field(None, description="...")` | Optional min/max length, regex pattern |
 | **Dict** | `Optional[Dict[str, str]]` | Key-value pairs |
 | **List** | `Optional[List[str]]` | List of items |
-| **Cross-field** | `@model_validator(mode="after")` | Compare multiple fields |
+| **Cross-field** | `@model_validator(mode="after")` | Compare multiple fields; used for derived field consistency |
 
 ### Adding a new enum
 
-Define it, then use it as a field type:
-
 ```python
-class FixationType(str, Enum):
-    formalin = "formalin"
-    frozen = "frozen"
-    other = "other"
+class FixationType(int, Enum):
+    formalin = 1
+    paraformaldehyde = 2
+    other = 7
 
 class SpecimenInfo(BaseModel):
-    fixation: Optional[FixationType] = Field(None,
-        description="Fixation method used")
+    NPFIX: Optional[FixationType] = Field(None,
+        description="Fixation method: 1=Formalin, 2=Paraformaldehyde, 7=Other")
 ```
 
-The format instructions will automatically list the allowed values.
-
-### Adding a new sub-model
-
-Define a new `BaseModel` subclass, then add it as a field on `NeuropathologyExtraction`:
-
-```python
-class SurgicalMargins(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    margin_status: Optional[str] = Field(None, description="Margin status (positive/negative)")
-    closest_margin_mm: Optional[float] = Field(None, ge=0.0, description="Closest margin in mm")
-
-class NeuropathologyExtraction(BaseModel):
-    # ... existing fields ...
-    margins: SurgicalMargins = Field(
-        default_factory=SurgicalMargins, description="Surgical margin assessment")
-```
+The format instructions will automatically list the allowed integer values.
 
 ## How the Re-Ask Loop Works
 
@@ -223,7 +267,7 @@ report → [build prompt from schema] → LLM → [parse JSON] → [Pydantic val
                                         +←——— [feed errors back] ←——+
 ```
 
-If the LLM output fails JSON parsing or Pydantic validation, the errors are appended as a follow-up user message so the model can self-correct. This runs up to `--max-retries` times (default: 3). The Pydantic error messages are specific enough (e.g., "age must be >= 0 and <= 120, got 200") that the model usually fixes them in one retry.
+If the LLM output fails JSON parsing or Pydantic validation, the errors are appended as a follow-up user message so the model can self-correct. This runs up to `--max-retries` times (default: 3). Derived field consistency is also enforced by Pydantic (e.g., `NACCHEM=0` while `NPHEM=1` will trigger a re-ask with the specific contradiction).
 
 ## Troubleshooting
 
@@ -233,7 +277,9 @@ If the LLM output fails JSON parsing or Pydantic validation, the errors are appe
 
 **PDF extraction is empty**: Try installing `pdfplumber` as a fallback (`pip install pdfplumber`). Some scanned PDFs may need OCR preprocessing — this tool handles text-based PDFs only.
 
-**Validation keeps failing**: Check `--verbose` output. If the model consistently fails on a field, consider relaxing the constraint in `schema.py` or providing a more specific `description`.
+**Validation keeps failing**: Check `--verbose` output. If the model consistently fails on a field, the description in `schema_full.py` may need more disambiguation. The `evidence` field in `field_annotations` in passing outputs will show what language the model is trying to map.
+
+**`reasoning_effort` ignored**: This parameter is only consumed by `gpt-oss` models via the chat template. For other models (e.g., Llama) it is silently ignored.
 
 ## License
 
