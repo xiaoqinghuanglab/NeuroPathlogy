@@ -158,21 +158,23 @@ def generate_text(
     messages: list[dict],
     *,
     max_new_tokens: int = 32768,
-    temperature: float = 0.3,
+    temperature: float = 0.01,
     top_p: float = 0.9,
     do_sample: bool = True,
     seed: Optional[int] = None,
+    reasoning_effort: Optional[str] = None,
 ) -> str:
     """Apply chat template, generate, decode."""
     if seed is not None:
         torch.manual_seed(seed)
         logger.info("random seed set to %d", seed)
 
-    text = tokenizer.apply_chat_template(
-        messages,
-        tokenize=False,
-        add_generation_prompt=True,
-    )
+    template_kwargs: dict = {"tokenize": False, "add_generation_prompt": True}
+    if reasoning_effort is not None:
+        template_kwargs["reasoning_effort"] = reasoning_effort
+        logger.info("reasoning_effort=%s", reasoning_effort)
+
+    text = tokenizer.apply_chat_template(messages, **template_kwargs)
     inputs = tokenizer(text, return_tensors="pt").to(model.device)
 
     with torch.no_grad():
@@ -196,19 +198,35 @@ def generate_text(
 # ---------------------------------------------------------------------------
 
 SYSTEM_PROMPT = """\
-You are a clinical NLP system specializing in neuropathology report extraction.
-Read the neuropathology report and extract structured data into JSON.
+You are a clinical NLP system that extracts structured NACC neuropathology variables from autopsy reports.
 
 {format_instructions}
 
-RULES:
-- Extract only what is explicitly stated or clearly implied.
-- Use null for any field that cannot be determined.
-- Do not hallucinate.  If a molecular test is not mentioned, use "not_tested".
-- For Ki-67, extract the numeric percentage (e.g., 30 not 0.30).
-- For dates, use YYYY-MM-DD format.  For times, use HH:MM 24-hour format.
-- For patient name, extract Last and First separately.
-- Output valid JSON only — no markdown fences, no commentary."""
+EXTRACTION RULES:
+- Extract only what is explicitly stated or clearly implied by the report text.
+- Use null for any field not determinable from the report.
+- Do not hallucinate values. If a structure is not mentioned, do not infer its status.
+- All numeric codes must be exact integers from the allowed set in each field's description.
+- For NPWBRWT: extract the numeric value in grams as a float (e.g. 991.7, 1200.0).
+- For severity scales: map report language carefully:
+    "mild" → 1, "moderate" → 2, "severe" → 3, "no/none/absent" → 0.
+    "moderate to severe" or "moderately severe" → 3 (Severe).
+- For PresentAbsent fields (NPLINF, NPLAC, NPHEM): 1=Present/Yes, 2=Absent/No.
+
+ANNOTATION RULES (field_annotations):
+- For every non-null field you extract, add an entry in field_annotations keyed by the variable name.
+- evidence: copy the exact phrase or sentence from the report that drove your decision.
+- note: write a brief reasoning note ONLY when the extraction required judgment (indirect language,
+  ambiguous severity, conflicting statements). Leave null for clear-cut extractions.
+- confidence: assign a float 0.0–1.0 reflecting how certain you are:
+    1.0 = exact match, unambiguous language
+    0.8 = clearly implied, minor paraphrase
+    0.6 = indirect or requires inference
+    0.4 = ambiguous, best guess among plausible codes
+    below 0.4 = consider leaving field null instead
+
+OUTPUT: valid JSON only — no markdown fences, no commentary before or after the JSON object.\
+"""
 
 USER_PROMPT = "NEUROPATHOLOGY REPORT:\n\n{report_text}"
 
@@ -234,14 +252,16 @@ def strip_json_fences(text: str) -> str:
 
     # gpt-oss channel format: extract content from final channel
     if "<|channel|>final<|message|>" in text:
-        start = text.find("<|channel|>final<|message|>") + len("<|channel|>final<|message|>")
+        start = text.find("<|channel|>final<|message|>") + len(
+            "<|channel|>final<|message|>"
+        )
         end = text.find("<|end|>", start)
         text = text[start:end].strip() if end != -1 else text[start:].strip()
         logger.debug("Extracted from final channel: %r", text)
 
     # handle <|return|> end token
     if "<|return|>" in text:
-        text = text[:text.find("<|return|>")].strip()
+        text = text[: text.find("<|return|>")].strip()
 
     # remove ```json fences
     if text.startswith("```json"):
@@ -274,11 +294,12 @@ def extract(
     tokenizer,
     *,
     model_cls: Optional[Type[BaseModel]] = None,
-    temperature: float = 0.3,
+    temperature: float = 0.01,
     top_p: float = 0.9,
     max_new_tokens: int = 32768,
     max_retries: int = 3,
     seed: Optional[int] = None,
+    reasoning_effort: Optional[str] = None,
 ) -> BaseModel:
     """Single-pass extraction with Pydantic validation and hinted re-ask."""
     if model_cls is None:
@@ -299,6 +320,7 @@ def extract(
             temperature=temperature,
             top_p=top_p,
             seed=seed,
+            reasoning_effort=reasoning_effort,
         )
 
         # parse JSON
@@ -387,7 +409,7 @@ def parse_args() -> argparse.Namespace:
         choices=["text", "pdf"],
         help="Override auto-detected input format",
     )
-    ap.add_argument("--temperature", type=float, default=0.3)
+    ap.add_argument("--temperature", type=float, default=0.01)
     ap.add_argument("--top-p", type=float, default=0.9)
     ap.add_argument(
         "--max-new-tokens",
@@ -396,7 +418,16 @@ def parse_args() -> argparse.Namespace:
         help="Max new tokens to generate (default: 32768)",
     )
     ap.add_argument("--max-retries", type=int, default=3)
-    ap.add_argument("--seed", type=int, default=None, help="Random seed for reproducibility")
+    ap.add_argument(
+        "--seed", type=int, default=None, help="Random seed for reproducibility"
+    )
+    ap.add_argument(
+        "--reasoning-effort",
+        type=str,
+        default="medium",
+        choices=["low", "medium", "high"],
+        help="Reasoning effort for gpt-oss models (default: medium; ignored by other models)",
+    )
     ap.add_argument("--verbose", action="store_true")
     return ap.parse_args()
 
@@ -434,6 +465,7 @@ def main() -> None:
         max_new_tokens=args.max_new_tokens,
         max_retries=args.max_retries,
         seed=args.seed,
+        reasoning_effort=args.reasoning_effort,
     )
 
     # --- output ---
