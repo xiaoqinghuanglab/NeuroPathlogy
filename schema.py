@@ -1,4 +1,4 @@
-"""schema_full.py — Extended NACC Neuropathology extraction schema (40 variables).
+"""schema.py — NACC Neuropathology extraction schema (43 variables).
 
 SINGLE SOURCE OF TRUTH. main.py imports only get_extraction_model() and
 build_format_instructions(). Edit descriptions here to change what the LLM sees.
@@ -44,6 +44,7 @@ class FieldAnnotation(BaseModel):
     evidence: Optional[str] = Field(
         None,
         description=(
+            "A SINGLE string — never an array. "
             "Verbatim phrase or sentence from the report that supports this value. "
             "Required for every non-null extraction. "
             "Null only when the field is null because the finding is simply absent "
@@ -65,7 +66,6 @@ class FieldAnnotation(BaseModel):
 # Enums
 # ---------------------------------------------------------------------------
 
-
 class SeverityCode(int, Enum):
     none = 0
     mild = 1
@@ -74,20 +74,17 @@ class SeverityCode(int, Enum):
     not_assessed = 8
     missing = 9
 
-
 class PresentAbsentCode(int, Enum):
     present = 1
     absent = 2
     not_assessed = 3
     missing = 9
 
-
 class YesNoCode(int, Enum):
     no = 0
     yes = 1
     not_assessed = 8
     missing = 9
-
 
 class BraakStage(int, Enum):
     stage_0 = 0
@@ -101,7 +98,6 @@ class BraakStage(int, Enum):
     not_assessed = 8
     missing = 9
 
-
 class ThalPhase(int, Enum):
     phase_0 = 0
     phase_1 = 1
@@ -112,7 +108,6 @@ class ThalPhase(int, Enum):
     not_assessed = 8
     missing = 9
 
-
 class CERADScore(int, Enum):
     no_plaques = 0
     sparse = 1
@@ -121,7 +116,6 @@ class CERADScore(int, Enum):
     not_assessed = 8
     missing = 9
 
-
 class ADNCScore(int, Enum):
     not_AD = 0
     low = 1
@@ -129,7 +123,6 @@ class ADNCScore(int, Enum):
     high = 3
     not_assessed = 8
     missing = 9
-
 
 class LewyBodyPattern(int, Enum):
     no_lewy = 0
@@ -145,7 +138,6 @@ class LewyBodyPattern(int, Enum):
 # ---------------------------------------------------------------------------
 # Sub-models
 # ---------------------------------------------------------------------------
-
 
 class SpecimenInfo(BaseModel):
     """Basic specimen and case-level details."""
@@ -168,42 +160,39 @@ class SpecimenInfo(BaseModel):
             "Codes: 1=Formalin (most common; 'fixed in 10% formalin', 'formalin-fixed'), "
             "2=Paraformaldehyde ('PFA', '4% paraformaldehyde'), "
             "7=Other (must also populate NPFIXX with the fixative name). "
-            "Look for phrases like 'brain was fixed in...', 'fixed overnight in...'. "
-            "-4=N/A if fixation is not applicable."
+            "Look for phrases like 'brain was fixed in...', 'fixed overnight in...'."
         ),
     )
-    NPWBRWT: Optional[float] = Field(
-        None,
+    NPWBRWT: float = Field(
         description=(
             "Whole brain weight in grams, measured before or after fixation. "
-            "Valid range: 100–2500 g. Special code: 9999=weight unknown. "
+            "Valid range: 100-2500 g. Special code: 9999=weight unknown. "
             "Extract the numeric value only — strip units (e.g., '1250 g' → 1250). "
             "If weight is reported as a range, use the midpoint. "
             "Look for 'brain weight', 'cerebral weight', 'combined weight', 'weighs X grams'. "
             "If only cerebellum or brainstem weight is given separately, do not add them "
             "unless the report explicitly states 'total brain weight'. "
-            "Normal adult range: 1100–1400 g (male), 1000–1300 g (female)."
+            "Normal adult range: 1100-1400 g (male), 1000-1300 g (female)."
         ),
     )
-    NPWBRF: Optional[int] = Field(
-        None,
+    NPWBRF: int = Field(
         description=(
             "Whether the recorded brain weight was measured fresh (before fixation) "
-            "or after fixation. Fixation typically adds 5–10% weight. "
+            "or after fixation. Fixation typically adds 5-10% weight. "
             "Codes: 1=Fresh (weighed at autopsy before fixation), "
             "2=Fixed (weighed after fixation period), "
-            "8=Not assessed / not specified in report. "
+            "8=Not applicable (weight not recorded or not relevant). "
             "Look for 'fresh weight', 'fixed weight', or context clues like 'weighed at autopsy'."
         ),
     )
-    NPPMIH: Optional[float] = Field(
-        None,
+    NPPMIH: float = Field(
         description=(
             "Postmortem interval (PMI): time from death to brain fixation or freezing, in hours. "
-            "Valid range: 0.0–98.9 hours; 99.9=unknown. "
+            "Valid range: 0.0-98.9 hours; 99.9=unknown. "
             "Look for 'postmortem interval', 'PMI', 'time of death to autopsy'. "
             "Convert days to hours if needed (e.g., '2 days' → 48.0). "
-            "If a range is given, use the midpoint."
+            "If a range is given, use the midpoint. "
+            "If PMI is not reported anywhere in the report → output 99.9."
         ),
     )
     NPFIXX: Optional[str] = Field(
@@ -225,15 +214,36 @@ class SpecimenInfo(BaseModel):
     @field_validator("NPFIX")
     @classmethod
     def val_fix(cls, v):
-        if v is not None and v not in {1, 2, 7, -4}:
-            raise ValueError(f"NPFIX must be 1, 2, 7, or -4, got {v}")
+        if v is not None and v not in {1, 2, 7}:
+            raise ValueError(f"NPFIX must be 1, 2, or 7, got {v}")
         return v
 
     @field_validator("NPWBRWT")
     @classmethod
     def val_weight(cls, v):
-        if v is not None and v != 9999 and not (100 <= v <= 2500):
-            raise ValueError(f"NPWBRWT must be 100–2500 or 9999, got {v}")
+        if v is None:
+            raise ValueError("NPWBRWT must not be null — use 9999 if weight is unknown")
+        if v != 9999 and not (100 <= v <= 2500):
+            raise ValueError(f"NPWBRWT must be 100-2500 or 9999, got {v}")
+        return v
+
+
+    @field_validator("NPWBRF")
+    @classmethod
+    def val_wbrf(cls, v):
+        if v is None:
+            raise ValueError("NPWBRF must not be null — use 8 if not applicable")
+        if v not in {1, 2, 8}:
+            raise ValueError(f"NPWBRF must be 1, 2, or 8, got {v}")
+        return v
+
+    @field_validator("NPPMIH")
+    @classmethod
+    def val_pmih(cls, v):
+        if v is None:
+            raise ValueError("NPPMIH must not be null — use 99.9 if unknown")
+        if v != 99.9 and not (0.0 <= v <= 98.9):
+            raise ValueError(f"NPPMIH must be 0.0-98.9 or 99.9, got {v}")
         return v
 
 
@@ -242,8 +252,7 @@ class GrossFindings(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    NPGRLA: Optional[int] = Field(
-        None,
+    NPGRLA: int = Field(
         description=(
             "Presence of focal lobar atrophy on gross examination (any lobe). "
             "Codes: 0=None (no focal atrophy identified), 1=Yes (focal lobar atrophy present), "
@@ -252,27 +261,30 @@ class GrossFindings(BaseModel):
             "shrunken compared to the rest of the cortex. "
             "Look for: 'focal frontal atrophy', 'frontotemporal atrophy', 'parietal atrophy', "
             "'knife-edge gyri', 'asymmetric cortical atrophy'. "
+            "Also check the final diagnoses — if neuronal loss or axonal loss is described as "
+            "most severe in specific lobes, code 1 even if the gross description uses diffuse language. "
             "DISTINGUISH from diffuse cortical atrophy (see NPGRCCA): NPGRLA=1 requires "
             "a specific lobe to be called out as preferentially affected. "
             "Global cortical thinning without focal emphasis → NPGRLA=0."
         ),
     )
-    NPGRHA: Optional[SeverityCode] = Field(
-        None,
+    NPGRHA: SeverityCode = Field(
         description=(
             "Severity of hippocampal atrophy on gross examination. "
             "Codes: 0=None, 1=Mild, 2=Moderate, 3=Severe, 8=Not assessed, 9=Unknown. "
             "The hippocampus is assessed bilaterally on the medial temporal surface. "
             "Look for: 'hippocampal atrophy', 'hippocampal shrinkage', 'medial temporal atrophy', "
-            "'small hippocampi', 'parahippocampal atrophy'. "
-            "Grading guidance: Mild=subtle volume reduction compared to expected; "
+            "'small hippocampi', 'parahippocampal atrophy', 'reduced hippocampal volume'. "
+            "Grading: Mild=subtle volume reduction compared to expected; "
             "Moderate=clearly shrunken, firm; Severe=markedly shrunken, leather-like. "
             "If only one side is affected but severity stated, code the severity as described. "
-            "If the report says 'mild to moderate', code 2 (Moderate)."
+            "If 'mild to moderate' → 2; 'moderate to severe' → 3. "
+            "If qualitative atrophy language accompanies a measurement, grade from the language. "
+            "If only a raw measurement is given with no atrophy description → code 9. "
+            "Reserve 0 only if the report explicitly states the hippocampus is normal or unremarkable."
         ),
     )
-    NPGRSNH: Optional[SeverityCode] = Field(
-        None,
+    NPGRSNH: SeverityCode = Field(
         description=(
             "Severity of substantia nigra (SN) hypopigmentation on gross examination. "
             "Codes: 0=None (normal dark pigmentation), 1=Mild, 2=Moderate, 3=Severe (near-complete pallor), "
@@ -282,12 +294,16 @@ class GrossFindings(BaseModel):
             "Look for: 'pallor of substantia nigra', 'depigmentation of SN', 'hypopigmented SN', "
             "'loss of pigmentation in the substantia nigra', 'pale substantia nigra'. "
             "Grading guidance: Mild=slightly pale compared to expected; "
-            "Moderate=clearly paler than normal; Severe=almost completely depigmented/white. "
+            "Moderate=clearly paler than normal; "
+            "Severe requires near-complete or complete depigmentation — almost white. "
+            "'Marked depigmentation', 'marked loss of pigmentation', or 'significant depigmentation' "
+            "without explicit near-complete or complete loss → code 2, not 3. "
+            "If depigmentation is described without any severity qualifier → code 2. "
+            "Reserve 3 only for explicitly near-complete or complete depigmentation. "
             "If the report only notes SN pigmentation is 'normal' or 'intact' → code 0."
         ),
     )
-    NPGRLCH: Optional[SeverityCode] = Field(
-        None,
+    NPGRLCH: SeverityCode = Field(
         description=(
             "Severity of locus coeruleus (LC) hypopigmentation on gross examination. "
             "Codes: 0=None (normal blue-gray pigmentation), 1=Mild, 2=Moderate, 3=Severe, "
@@ -296,25 +312,28 @@ class GrossFindings(BaseModel):
             "Look for: 'locus coeruleus pallor', 'depigmentation of locus coeruleus', "
             "'hypopigmented locus ceruleus', 'pale LC'. "
             "Often assessed together with SN; both can be affected in Parkinson-spectrum disease. "
-            "If the LC is not mentioned at all in the report → null (do not assume normal). "
+            "If the LC is not mentioned in the report, code 0 — LC pigmentation is a visually "
+            "unavoidable gross finding when the pons is sectioned; silence after routine examination "
+            "means normal pigmentation. "
+            "Reserve 8 only when the pons was explicitly not available or not examined. "
             "If report says LC is 'normally pigmented' or 'intact' → code 0."
         ),
     )
-    NPGRCCA: Optional[SeverityCode] = Field(
-        None,
+    NPGRCCA: SeverityCode = Field(
         description=(
             "Severity of DIFFUSE cerebral cortical atrophy on gross examination. "
             "Codes: 0=None, 1=Mild, 2=Moderate, 3=Severe, 8=Not assessed, 9=Unknown. "
-            "This captures global/bilateral cortical volume loss, not focal lobar atrophy (see NPGRLA). "
-            "Look for: 'cortical atrophy', 'cerebral atrophy', 'widened sulci', "
-            "'thinned gyri', 'reduced brain volume', 'generalized atrophy'. "
-            "Grading: Mild=slight sulcal widening; Moderate=clearly widened sulci with thinned gyri; "
-            "Severe=prominent sulcal widening, markedly thinned gyri, significantly reduced volume. "
-            "If report describes 'mild diffuse atrophy' → code 1."
+            "Captures global/bilateral cortical volume loss. "
+            "Note: 'diffuse' describes distribution, not severity — grade independently. "
+            "If explicit severity words are absent, infer from structural markers: "
+            "slight sulcal widening → 1; clearly widened sulci, mild ventricular enlargement → 2; "
+            "prominent sulcal widening, markedly thinned gyri, significant ventricular enlargement → 3. "
+            "If atrophy is described only in specific lobes, grade based on overall extent — "
+            "focal/regional atrophy without global involvement grades lower than diffuse. "
+            "0=No atrophy reported; 9=atrophy present but severity cannot be determined."
         ),
     )
-    NACCBRNN: Optional[int] = Field(
-        None,
+    NACCBRNN: int = Field(
         description=(
             "Derived flag: NO significant neuropathological changes identified. "
             "Codes: 0=Neuropathological changes ARE present (normal = no), "
@@ -322,21 +341,23 @@ class GrossFindings(BaseModel):
             "8=Not assessed or missing. "
             "Code 1 only when the report concludes the examination is essentially unremarkable "
             "or 'within normal limits for age'. "
-            "If ANY pathological finding is present elsewhere in this extraction, code 0."
+            "If ANY pathological finding is present elsewhere in this extraction, code 0. "
+            "If the report contains ANY pathological diagnosis — AD, FTLD, vascular disease, "
+            "Lewy body disease, or any other finding — code 0."
         ),
     )
 
     @field_validator("NPGRLA")
     @classmethod
     def val_grla(cls, v):
-        if v is not None and v not in {0, 1, 8, 9, -4}:
-            raise ValueError(f"NPGRLA must be 0, 1, 8, 9, or -4, got {v}")
+        if v not in {0, 1, 8, 9}:
+            raise ValueError(f"NPGRLA must be 0, 1, 8, or 9, got {v}")
         return v
 
     @field_validator("NACCBRNN")
     @classmethod
     def val_brnn(cls, v):
-        if v is not None and v not in {0, 1, 8}:
+        if v not in {0, 1, 8}:
             raise ValueError(f"NACCBRNN must be 0, 1, or 8, got {v}")
         return v
 
@@ -346,8 +367,7 @@ class VascularPathology(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    NACCAVAS: Optional[SeverityCode] = Field(
-        None,
+    NACCAVAS: SeverityCode = Field(
         description=(
             "Severity of atherosclerosis of the circle of Willis and major cerebral arteries. "
             "Codes: 0=None, 1=Mild, 2=Moderate, 3=Severe, 8=Not assessed, 9=Unknown. "
@@ -355,15 +375,15 @@ class VascularPathology(BaseModel):
             "basilar artery, MCA, ACA, PCA). Distinct from arteriolosclerosis (NACCARTE). "
             "Look for: 'atherosclerosis', 'arteriosclerosis', 'calcified plaques', "
             "'atheromatous plaques', 'stenosis' of named cerebral arteries. "
-            "Grading: Mild=few scattered plaques, no luminal narrowing; "
-            "Moderate=plaques with up to ~50% stenosis; "
+            "Grading: Mild=single or few focal plaques, no significant luminal narrowing; "
+            "Moderate=plaques in multiple vessels or with up to ~50% stenosis; "
             "Severe=extensive plaques, >50% stenosis or near-occlusion. "
+            "A single plaque in one vessel without stenosis → code 1. "
             "If report says 'mild to moderate' → code 2. 'Moderate to severe' → code 3. "
-            "If arteries are described as 'patent' or 'without significant atherosclerosis' → code 0."
+            "If arteries described as 'patent' or 'without significant atherosclerosis' → code 0."
         ),
     )
-    NPLINF: Optional[PresentAbsentCode] = Field(
-        None,
+    NPLINF: PresentAbsentCode = Field(
         description=(
             "Large arterial cortical infarcts (territorial infarcts) present. "
             "Codes: 1=Present, 2=Absent, 3=Not assessed, 9=Unknown. "
@@ -377,8 +397,7 @@ class VascularPathology(BaseModel):
             "Do not code 2 if infarcts were not assessed."
         ),
     )
-    NPLAC: Optional[PresentAbsentCode] = Field(
-        None,
+    NPLAC: PresentAbsentCode = Field(
         description=(
             "Lacunar infarcts (small vessel infarcts, <1.5 cm) present. "
             "Codes: 1=Present, 2=Absent, 3=Not assessed, 9=Unknown. "
@@ -391,8 +410,7 @@ class VascularPathology(BaseModel):
             "If no lacunes mentioned and report is complete → code 2 (Absent)."
         ),
     )
-    NPHEM: Optional[PresentAbsentCode] = Field(
-        None,
+    NPHEM: PresentAbsentCode = Field(
         description=(
             "Hemorrhage(s) present — includes microbleeds, petechiae, macrohemorrhage. "
             "Codes: 1=Present, 2=Absent, 3=Not assessed, 9=Unknown. "
@@ -405,24 +423,28 @@ class VascularPathology(BaseModel):
             "Code 1 if ANY hemorrhagic lesion is noted, regardless of age or size."
         ),
     )
-    NPWMR: Optional[SeverityCode] = Field(
-        None,
+    NPWMR: SeverityCode = Field(
         description=(
-            "Severity of white matter rarefaction (myelin loss / leukoencephalopathy). "
-            "Codes: 0=None, 1=Mild, 2=Moderate, 3=Severe, 8=Not assessed, 9=Unknown. "
-            "White matter rarefaction = pallor and loss of myelin with sparing of axons "
-            "(unlike infarction), often periventricular. Associated with chronic ischemia. "
-            "Look for: 'white matter rarefaction', 'white matter pallor', 'leukoaraiosis', "
-            "'periventricular white matter changes', 'subcortical white matter disease', "
-            "'myelin loss', 'white matter gliosis'. "
-            "Grading: Mild=patchy or mild periventricular pallor; "
-            "Moderate=confluent periventricular or multifocal changes; "
-            "Severe=extensive, confluent throughout white matter. "
-            "DISTINGUISH from infarcts: rarefaction is a diffuse process, not focal cavitation."
+            "Severity of white matter rarefaction: myelin loss, leukoencephalopathy, or "
+            "white matter axonal loss. Search BOTH the gross description AND all final "
+            "diagnoses — the relevant finding may appear under any diagnosis heading. "
+            "Accept any description of white matter myelin or axonal pathology regardless "
+            "of exact terminology: 'white matter rarefaction', 'white matter pallor', "
+            "'myelin loss', 'white matter gliosis', 'leukoaraiosis', 'reduction in bulk/volume "
+            "of white matter', 'periventricular white matter changes', 'leukoencephalopathy'. "
+            "IMPORTANT: absence of the word 'rarefaction' does NOT mean the finding is absent. "
+            "Grading (use the worst region described across the entire report): "
+            "0=None: No white matter pathology reported anywhere in the report. "
+            "1=Mild: patchy or focal, limited to isolated regions. "
+            "2=Moderate: confluent periventricular or multifocal; or 'mild to moderate'. "
+            "3=Severe: extensive or confluent throughout; diffuse; severe in multiple regions; "
+            "'moderate to severe'; or any single region described as severe. "
+            "8=Not assessed. 9=Unknown. "
+            "Only output 0 after confirming no white matter pathology appears anywhere "
+            "in the gross description or final diagnoses."
         ),
     )
-    NACCARTE: Optional[SeverityCode] = Field(
-        None,
+    NACCARTE: SeverityCode = Field(
         description=(
             "Severity of arteriolosclerosis (small vessel wall thickening). "
             "Codes: 0=None, 1=Mild, 2=Moderate, 3=Severe, 8=Not assessed, 9=Unknown. "
@@ -432,11 +454,11 @@ class VascularPathology(BaseModel):
             "Look for: 'arteriolosclerosis', 'hyaline arteriolosclerosis', 'arteriolar thickening', "
             "'small vessel disease', 'arteriolar hyalinization', 'concentric wall thickening'. "
             "Grading mirrors NACCAVAS: Mild=occasional thickened arterioles; "
-            "Moderate=widespread thickening; Severe=extensive with near-obliteration of lumina."
+            "Moderate=widespread thickening; Severe=extensive with near-obliteration of lumina. "
+            "If arteriolosclerosis is not mentioned → output 0."
         ),
     )
-    NACCVASC: Optional[int] = Field(
-        None,
+    NACCVASC: int = Field(
         description=(
             "Derived summary: any vascular pathology present (yes/no). "
             "Codes: 0=No vascular pathology, 1=Vascular pathology present, 9=Unknown. "
@@ -446,8 +468,7 @@ class VascularPathology(BaseModel):
             "This is a derived field — derive it from the other vascular findings."
         ),
     )
-    NACCINF: Optional[int] = Field(
-        None,
+    NACCINF: int = Field(
         description=(
             "Derived summary: any infarct or lacune present. "
             "Codes: 0=No, 1=Yes, 8=Not assessed, 9=Unknown. "
@@ -456,8 +477,7 @@ class VascularPathology(BaseModel):
             "This is a derived field."
         ),
     )
-    NACCHEM: Optional[int] = Field(
-        None,
+    NACCHEM: int = Field(
         description=(
             "Derived summary: any hemorrhage or microbleed present. "
             "Codes: 0=No, 1=Yes, 8=Not assessed, 9=Unknown. "
@@ -466,11 +486,18 @@ class VascularPathology(BaseModel):
         ),
     )
 
-    @field_validator("NACCVASC", "NACCINF", "NACCHEM")
+    @field_validator("NACCVASC")
+    @classmethod
+    def val_naccvasc_derived(cls, v):
+        if v not in {0, 1, 9}:
+            raise ValueError(f"NACCVASC must be 0, 1, or 9, got {v}")
+        return v
+
+    @field_validator("NACCINF", "NACCHEM")
     @classmethod
     def val_derived(cls, v):
-        if v is not None and v not in {0, 1, 8, 9}:
-            raise ValueError(f"Derived vascular field must be 0, 1, 8, or 9, got {v}")
+        if v not in {0, 1, 8, 9}:
+            raise ValueError(f"Derived field must be 0, 1, 8, or 9, got {v}")
         return v
 
 
@@ -479,52 +506,59 @@ class MicroscopicFindings(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    NPNLOSS: Optional[SeverityCode] = Field(
-        None,
+    NPNLOSS: SeverityCode = Field(
         description=(
-            "Severity of neuronal loss specifically in the substantia nigra (pars compacta). "
+            "Severity of neuronal loss specifically in the substantia nigra (SN) pars compacta only. "
             "Codes: 0=None, 1=Mild, 2=Moderate, 3=Severe, 8=Not assessed, 9=Unknown. "
-            "Neuronal loss in the SN is the hallmark of Parkinson's disease and related synucleinopathies. "
             "Look for: 'neuronal loss in substantia nigra', 'depopulation of SN neurons', "
             "'loss of dopaminergic neurons', 'reduced neuronal density in SN pars compacta', "
             "'neuronal depletion substantia nigra'. "
-            "Note: this field is SPECIFICALLY for SN neuronal loss, not global or cortical neuronal loss. "
-            "Grading: Mild=<25% reduction; Moderate=25–75% reduction; Severe=>75% reduction "
-            "relative to expected neuronal density. "
-            "Accompanying reactive gliosis is expected and does not change the code."
+            "If neuronal loss is described in a severity list (e.g. 'severe: X, Y; moderate: SN, Z'), "
+            "Note: this field is SPECIFICALLY for SN neuronal loss"
+            "use the severity qualifier assigned to the SN specifically, not the worst overall. "
+            "0=No SN neuronal loss reported; 8=SN not assessed; 9=severity cannot be determined."
+            "Do NOT use gross depigmentation language ('depigmented', 'loss of pigmentation', "
+            "'pale substantia nigra') as evidence — that is a gross finding captured in NPGRSNH. "
+            "NPNLOSS requires microscopic evidence of neuronal loss from the final diagnoses section only. "
+            "If no microscopic neuronal loss is stated for the SN → code 8."
         ),
     )
-    NPHIPSCL: Optional[int] = Field(
-        None,
+    NPHIPSCL: int = Field(
         description=(
-            "Hippocampal sclerosis: neuronal loss and gliosis in CA1 and/or subiculum sectors. "
-            "Codes: 0=None, 1=Unilateral, 2=Bilateral, 3=Present but laterality not specified (NOS), "
+            "Hippocampal sclerosis (HS): severe CA1/subiculum neuronal loss with gliosis. "
+            "Codes: 0=None, 1=Unilateral, 2=Bilateral, 3=Present laterality unspecified, "
             "8=Not assessed, 9=Unknown. "
             "Hippocampal sclerosis (HS) is characterized by severe CA1 pyramidal cell loss "
             "with reactive astrogliosis, often with relative sparing of CA2. "
             "Common in TDP-43 pathology, epilepsy, and aging-related HS (ARTAG). "
             "Look for: 'hippocampal sclerosis', 'CA1 neuronal loss', 'hippocampal gliosis', "
             "'sclerosis of the hippocampus', 'HS-Aging'. "
-            "If unilateral, code 1. If bilateral, code 2. If present but side not specified, code 3. "
             "Do not confuse with hippocampal atrophy (NPGRHA) — atrophy is a gross finding; "
-            "hippocampal sclerosis is a microscopic finding."
+            "hippocampal sclerosis is a microscopic finding. "
+            "HS requires confirmed CA1 neuronal loss and gliosis. "
+            "If the report does not mention hippocampal sclerosis → output 0. "
+            "Use 8 only if the report explicitly states hippocampal sections were not examined. "
+            "Use 9 only if hippocampal tissue was unavailable or assessment was equivocal."
         ),
     )
-    NACCLEWY: Optional[int] = Field(
-        None,
+    NACCLEWY: int = Field(
         description=(
             "Derived Lewy body distribution pattern summary. "
-            "Codes: 0=No Lewy bodies, 1=Brainstem-predominant, 2=Limbic/transitional, "
-            "3=Neocortical/diffuse, 4=Lewy bodies present but pattern unspecified, "
+            "Codes: 0=No Lewy bodies, 1=Brainstem-predominant, 2=Limbic/transitional or amygdala-predominant, "
+            "3=Neocortical/diffuse, 4=Lewy bodies present but pattern unspecified or olfactory bulb only, "
             "8=Not assessed, 9=Unknown. "
             "This is a derived field — derive it from NPLBOD (the raw observation). "
             "Brainstem-predominant=Lewy bodies confined to brainstem nuclei (SN, LC, dorsal vagal). "
             "Limbic=brainstem + limbic structures (amygdala, cingulate, entorhinal). "
-            "Neocortical=widespread including neocortex."
+            "Neocortical=widespread including neocortex. "
+            "When NPLBOD=4 (amygdala-predominant) → derive NACCLEWY=2 (limbic/transitional or amygdala-predominant). "
+            "When NPLBOD=5 (olfactory bulb only) → derive NACCLEWY=4 (unspecified/olfactory). "
+            "If alpha-synuclein IHC was performed and the report does NOT mention Lewy bodies "
+            "in the diagnoses or microscopic section → code 0 (No Lewy bodies). "
+            "Reserve code 8 only when synuclein staining is explicitly stated as not performed or not assessed."
         ),
     )
-    NPLBOD: Optional[LewyBodyPattern] = Field(
-        None,
+    NPLBOD: LewyBodyPattern = Field(
         description=(
             "Lewy body pathology distribution pattern (raw observation). "
             "Codes: 0=No Lewy bodies identified; "
@@ -538,9 +572,30 @@ class MicroscopicFindings(BaseModel):
             "If the report gives a named pattern (e.g., 'neocortical Lewy body disease', "
             "'diffuse Lewy body disease') → map to the appropriate code. "
             "If Lewy bodies are present but distribution is not characterized → code 4 (Unspecified). "
+            "If alpha-synuclein IHC was performed and the report does NOT mention Lewy bodies "
+            "in the diagnoses or microscopic section → code 0 (No Lewy bodies). "
+            "Reserve code 8 only when synuclein staining is explicitly stated as not performed or not assessed. "
             "NPLBOD is the raw observation; NACCLEWY is derived from it — keep them consistent."
         ),
     )
+
+    @field_validator("NPHIPSCL")
+    @classmethod
+    def val_hipscl(cls, v):
+        if v is None:
+            raise ValueError("NPHIPSCL must not be null — use 8 if not assessed, or 9 if Missing/Unknown")
+        if v not in {0, 1, 2, 3, 8, 9}:
+            raise ValueError(f"NPHIPSCL must be 0, 1, 2, 3, 8, or 9, got {v}")
+        return v
+
+    @field_validator("NACCLEWY")
+    @classmethod
+    def val_lewy(cls, v):
+        if v is None:
+            raise ValueError("NACCLEWY must not be null — use 8 if not assessed")
+        if v not in {0, 1, 2, 3, 4, 8, 9}:
+            raise ValueError(f"NACCLEWY must be 0, 1, 2, 3, 4, 8, or 9, got {v}")
+        return v
 
 
 class ADPathology(BaseModel):
@@ -548,8 +603,7 @@ class ADPathology(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    NPTHAL: Optional[ThalPhase] = Field(
-        None,
+    NPTHAL: ThalPhase = Field(
         description=(
             "Thal phase of amyloid-beta (Aβ) plaque deposition — the 'A' score in ABC. "
             "Codes: 0=No Aβ plaques; "
@@ -559,32 +613,49 @@ class ADPathology(BaseModel):
             "4=Phase 4 (Phase 3 + brainstem: SN, LC, raphe); "
             "5=Phase 5 (Phase 4 + cerebellum); "
             "8=Not assessed, 9=Unknown. "
-            "Look for explicitly stated Thal phase ('Thal phase 3', 'A2', 'amyloid phase 2'). "
+            "NIA-AA A-score to Thal phase conversion — apply this when the report gives an A-score: "
+            "A0 → code 0, A1 → code 1 or 2, A2 → code 3, A3 → code 4 or 5. "
+            "WARNING: A3 does NOT mean phase 3 — it means phase 4 or 5. "
             "If not stated directly, infer from the distribution of amyloid plaques described. "
-            "Note: Thal phase is based on amyloid/Aβ PLAQUES, not CAA (which is NACCAMY)."
+            "Note: Thal phase is based on amyloid/Aβ PLAQUES, not CAA (which is NACCAMY). "
+            "When A-score maps to a range (A1→1-2, A3→4-5), default to the lower phase "
+            "unless the report confirms the defining region for the higher phase. "
+            "A1 → code 1 unless allocortex (entorhinal, hippocampus, cingulate, insula) is explicitly mentioned → code 2. "
+            "A3 → code 4 unless cerebellum is explicitly mentioned → code 5. "
+            "Use 0 only if Aβ plaques are explicitly absent or diagnosis excludes amyloid pathology. "
+            "Use 8 if amyloid assessment was explicitly not performed."
         ),
     )
-    NACCBRAA: Optional[BraakStage] = Field(
-        None,
+    NACCBRAA: BraakStage = Field(
         description=(
             "Braak neurofibrillary tangle (NFT) stage — the 'B' score in ABC. "
-            "Codes: 0=No NFTs; "
-            "1=Stage I (NFTs in transentorhinal region / layer Pre-alpha of entorhinal cortex); "
-            "2=Stage II (NFTs in entorhinal cortex + hippocampus CA1); "
-            "3=Stage III (NFTs spread to association neocortex: temporal pole, insula, cingulate); "
+            "Codes: "
+            "0=No NFTs identified (NFTs explicitly absent or absent on tau staining); "
+            "1=Stage I (NFTs confined to transentorhinal/entorhinal layer Pre-alpha); "
+            "2=Stage II (NFTs in entorhinal cortex and hippocampus CA1); "
+            "3=Stage III (NFTs in entorhinal + hippocampus + association neocortex: "
+            "temporal pole, insula, cingulate); "
             "4=Stage IV (NFTs throughout temporal, frontal, parietal association cortex); "
             "5=Stage V (NFTs in all association areas including prefrontal); "
             "6=Stage VI (NFTs in primary cortices: motor, sensory, visual); "
-            "7=Other tauopathy (non-AD tau, e.g., PSP, CBD, Pick's — use when tangle pattern "
-            "does not fit Braak staging for AD); "
-            "8=Not assessed, 9=Unknown. "
-            "Look for: 'Braak stage X', 'neurofibrillary stage', 'Braak and Braak stage X', "
-            "or description of NFT distribution mapped to stages above. "
-            "If the report gives a named AD stage ('Braak IV') → map directly."
+            "7=Non-AD tauopathy precludes Braak staging (e.g., PSP, CBD, Pick's, FTLD-tau); "
+            "8=Staging not performed / not assessable; 9=Unknown. "
+            "NIA-AA B-score: stages 0=B0, 1-2=B1, 3-4=B2, 5-6=B3. "
+            "STEP 1 — If the report gives a B-score directly, convert it: "
+            "B0 → 0, B1 → 1, B2 → 3, B3 → 5. "
+            "These are the LOWER bound of each B-score range. Default to lower unless distribution confirms higher. "
+            "STEP 2 — If no B-score but NFT distribution is described, infer stage: "
+            "entorhinal/transentorhinal only → 1; adds hippocampus CA1 → 2; "
+            "adds temporal/insula/cingulate → 3; widespread frontal/parietal → 4; "
+            "all association cortex → 5; primary cortices (motor/sensory/visual) → 6. "
+            "STEP 3 — Special cases: "
+            "If PRIMARY diagnosis is CBD, PSP, or Pick's disease → 7. "
+            "If tau immunoreactivity described but NFTs not specifically mentioned → 8. "
+            "Code 0 ONLY if NFTs explicitly stated absent. "
+            "PART and CTE as secondary findings do not trigger code 7 — stage normally."
         ),
     )
-    NACCNEUR: Optional[CERADScore] = Field(
-        None,
+    NACCNEUR: CERADScore = Field(
         description=(
             "CERAD score for neuritic (senile) plaques — the 'C' score in ABC. "
             "Neuritic plaques = amyloid cores with surrounding dystrophic neurites (tau-positive). "
@@ -593,31 +664,33 @@ class ADPathology(BaseModel):
             "2=Moderate (easily found but not numerous); "
             "3=Frequent (numerous in multiple neocortical fields); "
             "8=Not assessed, 9=Unknown. "
-            "Look for: 'CERAD score', 'neuritic plaques', 'senile plaques', 'NP score'. "
-            "DISTINGUISH from diffuse plaques (NACCDIFF): neuritic plaques have a dense amyloid "
-            "core and surrounding tau-positive neurites; diffuse plaques are pre-amyloid deposits "
-            "without neuritic change. "
-            "Pathologist language: 'sparse neuritic plaques' → 1; 'moderate' → 2; 'frequent/numerous' → 3."
+            "Look for: 'CERAD score', 'neuritic plaques', 'senile plaques', 'C-score'. "
+            "The ABC header C-score maps directly: C0=0, C1=1, C2=2, C3=3. "
+            "CRITICAL: diffuse plaques (NACCDIFF) are NOT neuritic plaques — "
+            "do not code NACCNEUR from diffuse plaque descriptions. "
+            "Neuritic plaques require a dense amyloid core with tau-positive dystrophic neurites. "
+            "If neuritic plaques are not mentioned and C-score is not given → output 0. "
+            "Use 8 only if amyloid/tau staining was explicitly not performed."
         ),
     )
-    NPADNC: Optional[ADNCScore] = Field(
-        None,
+    NPADNC: ADNCScore = Field(
         description=(
             "NIA-AA overall Alzheimer's Disease Neuropathological Change (ADNC) score — "
             "the final ABC composite. "
             "Codes: 0=Not AD / no/minimal ADNC; "
-            "1=Low ADNC (Thal 1–2, Braak I–II, CERAD 0–1 — age-related changes only); "
-            "2=Intermediate ADNC (Thal 3, Braak III–IV, CERAD 2 — some but not full AD); "
-            "3=High ADNC (Thal 4–5, Braak V–VI, CERAD 3 — consistent with full AD diagnosis); "
+            "1=Low ADNC (Thal 1-2, Braak I-II, CERAD 0-1 — age-related changes only); "
+            "2=Intermediate ADNC (Thal 3, Braak III-IV, CERAD 2 — some but not full AD); "
+            "3=High ADNC (Thal 4-5, Braak V-VI, CERAD 3 — consistent with full AD diagnosis); "
             "8=Not assessed, 9=Unknown. "
             "Look for: 'ADNC', 'ABC score', 'low/intermediate/high AD neuropathological change', "
             "'meets criteria for AD', 'NIA-AA criteria'. "
             "If the report gives the ABC scores separately, derive NPADNC from them: "
-            "all three must be high for NPADNC=3; if any one is low, the composite is lower."
+            "all three must be high for NPADNC=3; if any one is low, the composite is lower. "
+            "If no AD pathology or ADNC assessment is mentioned → output 0. "
+            "Use 8 only if the report explicitly states AD assessment was not performed."
         ),
     )
-    NACCDIFF: Optional[CERADScore] = Field(
-        None,
+    NACCDIFF: CERADScore = Field(
         description=(
             "CERAD score for diffuse (pre-amyloid) plaques. "
             "Diffuse plaques = Aβ deposits without dense core and without neuritic change (tau-negative). "
@@ -625,11 +698,12 @@ class ADPathology(BaseModel):
             "Look for: 'diffuse plaques', 'diffuse amyloid deposits', 'pre-amyloid plaques'. "
             "Often reported alongside neuritic plaques ('sparse neuritic and moderate diffuse plaques'). "
             "Diffuse plaques alone (without neuritic plaques) are less pathologically significant. "
-            "Use same CERAD grading as NACCNEUR: sparse/moderate/frequent."
+            "Use same CERAD grading as NACCNEUR: sparse/moderate/frequent. "
+            "If diffuse plaques are not mentioned in the report → code 0. "
+            "Use 8 only if amyloid staining was explicitly not performed."
         ),
     )
-    NACCAMY: Optional[SeverityCode] = Field(
-        None,
+    NACCAMY: SeverityCode = Field(
         description=(
             "Severity of cerebral amyloid angiopathy (CAA) — amyloid deposition in vessel walls. "
             "Codes: 0=None, 1=Mild, 2=Moderate, 3=Severe, 8=Not assessed, 9=Unknown. "
@@ -640,7 +714,10 @@ class ADPathology(BaseModel):
             "Grading: Mild=occasional vessel wall deposits; "
             "Moderate=widespread but not all vessels affected; "
             "Severe=extensive, many vessels affected, may have associated microinfarcts or hemorrhage. "
-            "If CAA is explicitly graded in the report, use that grade."
+            "If CAA is explicitly graded in the report, use that grade. "
+            "If CAA is not mentioned in the report → output 0. "
+            "Code 0 if amyloid plaques are absent or not mentioned "
+            "Use 8 only if amyloid staining was explicitly not performed."
         ),
     )
 
@@ -650,8 +727,7 @@ class DiagnosticCodes(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    NACCCBD: Optional[YesNoCode] = Field(
-        None,
+    NACCCBD: YesNoCode = Field(
         description=(
             "Corticobasal degeneration (CBD) present as a neuropathological diagnosis. "
             "Codes: 0=No, 1=Yes, 8=Not assessed, 9=Unknown. "
@@ -661,11 +737,11 @@ class DiagnosticCodes(BaseModel):
             "'4-repeat tauopathy consistent with CBD', 'astrocytic plaques'. "
             "Note: CBS (clinical syndrome) ≠ CBD (pathological diagnosis); "
             "code 1 only when the PATHOLOGICAL diagnosis is CBD. "
-            "CBD often co-occurs with AD pathology — code 1 regardless of co-pathology."
+            "CBD often co-occurs with AD pathology — code 1 regardless of co-pathology. "
+            "If not mentioned in the report → code 0."
         ),
     )
-    NPPVASC: Optional[int] = Field(
-        None,
+    NPPVASC: int = Field(
         description=(
             "Vascular disease listed as the PRIMARY (principal) neuropathological diagnosis. "
             "Codes: 1=Yes (vascular disease is the primary diagnosis), "
@@ -678,49 +754,58 @@ class DiagnosticCodes(BaseModel):
             "DISTINGUISH from NPCVASC (contributing diagnosis)."
         ),
     )
-    NPPAD: Optional[int] = Field(
-        None,
+    NPPAD: int = Field(
         description=(
             "Alzheimer's disease listed as the PRIMARY neuropathological diagnosis. "
             "Codes: 1=Yes, 2=No. "
             "Code 1 if the report identifies AD (high ADNC, NPADNC=3) as the primary/principal finding. "
             "If AD is a contributing co-pathology only → code 2 (and set NPCAD=1 instead). "
-            "Look for: 'primary diagnosis: Alzheimer's disease', 'Alzheimer's disease, NIA-AA high'."
+            "Look for: 'primary diagnosis: Alzheimer's disease', 'Alzheimer's disease, NIA-AA high'. "
+            "Decision rule: identify the PRIMARY diagnosis label in the Final Diagnoses section. "
+            "If AD/ADNC is listed first or explicitly labeled primary → NPPAD=1, NPCAD=2. "
+            "If another disease is listed first and AD appears as a secondary finding → NPPAD=2, NPCAD=1. "
+            "If there is no AD pathology at all → NPPAD=2, NPCAD=2."
         ),
     )
-    NPCAD: Optional[int] = Field(
-        None,
+    NPCAD: int = Field(
         description=(
             "Alzheimer's disease listed as a CONTRIBUTING (secondary) neuropathological diagnosis. "
             "Codes: 1=Yes, 2=No. "
             "Code 1 if AD pathology is present but is NOT the primary diagnosis "
             "(i.e., another disease is primary). Common in mixed dementia cases. "
-            "If AD is the primary diagnosis → NPPAD=1 and NPCAD=2."
+            "Decision rule: if AD is the primary diagnosis → NPPAD=1 and NPCAD=2. "
+            "If AD is secondary to another primary disease → NPPAD=2 and NPCAD=1. "
+            "If no AD pathology at all → both NPPAD=2 and NPCAD=2."
         ),
     )
-    NPPLEWY: Optional[int] = Field(
-        None,
+    NPPLEWY: int = Field(
         description=(
             "Lewy body disease listed as the PRIMARY neuropathological diagnosis. "
             "Codes: 1=Yes, 2=No. "
             "Encompasses PD, DLB, and PD with dementia when Lewy body pathology "
             "is the principal finding. "
             "Code 1 if the report identifies Lewy body disease / DLB / PD as primary. "
-            "If Lewy bodies are incidental or contributing only → code 2 (set NPCLEWY=1)."
+            "If Lewy bodies are incidental or contributing only → code 2 (set NPCLEWY=1). "
+            "Decision rule: identify the PRIMARY diagnosis in the Final Diagnoses section. "
+            "If Lewy body disease / DLB / PD is listed first or explicitly labeled primary → NPPLEWY=1, NPCLEWY=2. "
+            "If another disease is primary and Lewy body pathology is secondary → NPPLEWY=2, NPCLEWY=1. "
+            "If no Lewy body pathology at all → NPPLEWY=2, NPCLEWY=2. "
+            "If your reasoning leads you to code 0 (meaning No/Absent), output 2 instead."
         ),
     )
-    NPCLEWY: Optional[int] = Field(
-        None,
+    NPCLEWY: int = Field(
         description=(
             "Lewy body disease listed as a CONTRIBUTING (secondary) neuropathological diagnosis. "
             "Codes: 1=Yes, 2=No. "
             "Code 1 when Lewy body pathology is present but is not the primary diagnosis. "
             "Common in mixed AD+Lewy body cases. "
-            "If Lewy body disease is the primary diagnosis → NPPLEWY=1 and NPCLEWY=2."
+            "Decision rule: if Lewy body disease is the primary diagnosis → NPPLEWY=1 and NPCLEWY=2. "
+            "If Lewy body pathology is secondary to another primary disease → NPPLEWY=2 and NPCLEWY=1. "
+            "If no Lewy body pathology at all → both NPPLEWY=2 and NPCLEWY=2. "
+            "If your reasoning leads you to code 0 (meaning No/Absent), output 2 instead."
         ),
     )
-    NPCVASC: Optional[int] = Field(
-        None,
+    NPCVASC: int = Field(
         description=(
             "Vascular disease listed as a CONTRIBUTING (secondary) neuropathological diagnosis. "
             "Codes: 1=Yes, 2=No. "
@@ -731,18 +816,18 @@ class DiagnosticCodes(BaseModel):
             "'cerebrovascular disease as contributing factor'."
         ),
     )
-    NPPFTLD: Optional[int] = Field(
-        None,
+    NPPFTLD: int = Field(
         description=(
             "Frontotemporal lobar degeneration (FTLD) listed as the PRIMARY diagnosis. "
             "Codes: 1=Yes, 2=No. "
             "FTLD encompasses FTLD-tau (Pick's, PSP, CBD, AGD) and FTLD-TDP subtypes. "
-            "Code 1 if any FTLD subtype is listed as the principal neuropathological diagnosis. "
-            "Look for: 'FTLD', 'frontotemporal lobar degeneration', as primary diagnosis label."
+            "Code 1 if any FTLD subtype is and should be listed as the principal neuropathological diagnosis. "
+            "Look for: 'FTLD', 'frontotemporal lobar degeneration', as primary diagnosis label. "
+            "CRITICAL: This field uses 1=Yes and 2=No only. Code 0 is not allowed. "
+            "If your reasoning leads you to code 0 (meaning No/Absent), output 2 instead."
         ),
     )
-    NACCPROG: Optional[YesNoCode] = Field(
-        None,
+    NACCPROG: YesNoCode = Field(
         description=(
             "Progressive supranuclear palsy (PSP) present as a neuropathological diagnosis. "
             "Codes: 0=No, 1=Yes, 8=Not assessed, 9=Unknown. "
@@ -750,35 +835,37 @@ class DiagnosticCodes(BaseModel):
             "predominantly in basal ganglia, subthalamic nucleus, SN, brainstem. "
             "Look for: 'progressive supranuclear palsy', 'PSP', 'PSP-Richardson', "
             "'tufted astrocytes', 'globose tangles in STN'. "
+            "If not mentioned in the report → code 0. "
             "Code 1 regardless of whether PSP is primary or contributing."
         ),
     )
-    NACCPICK: Optional[YesNoCode] = Field(
-        None,
+    NACCPICK: YesNoCode = Field(
         description=(
             "Pick's disease (PiD) present as a neuropathological diagnosis. "
             "Codes: 0=No, 1=Yes, 8=Not assessed, 9=Unknown. "
             "Pick's disease = 3-repeat tauopathy with Pick bodies (round, tau-positive inclusions) "
             "and ballooned neurons, with frontotemporal predilection. "
             "Look for: 'Pick disease', 'Pick bodies', 'PiD', '3-repeat tauopathy consistent with PiD'. "
+            "If not mentioned in the report → code 0. "
             "Code 1 regardless of whether it is primary or contributing."
         ),
     )
-    NPFTDTDP: Optional[YesNoCode] = Field(
-        None,
+    NPFTDTDP: YesNoCode = Field(
         description=(
-            "FTLD-TDP (TDP-43 proteinopathy) present as a neuropathological diagnosis. "
+            "TDP-43 proteinopathy present as a neuropathological finding. "
             "Codes: 0=No, 1=Yes, 8=Not assessed, 9=Unknown. "
+            "Code 1 if TDP-43 pathology is present anywhere in the report, regardless of "
+            "whether it is the primary diagnosis or an incidental sub-finding under another diagnosis. "
             "TDP-43 pathology includes cytoplasmic inclusions, neurites, and intranuclear inclusions "
-            "staining with TDP-43 IHC; subtypes A–E (Mackenzie classification). "
-            "Look for: 'FTLD-TDP', 'TDP-43 pathology', 'TDP-43 inclusions', "
-            "'TDP-43 immunoreactive inclusions', 'ALS-TDP'. "
-            "Code 1 if TDP-43 pathology is present in any distribution or subtype. "
+            "staining with TDP-43 IHC; subtypes A-E (Mackenzie classification). "
+            "Look for: 'FTLD-TDP', 'TDP-43 pathology', 'TDP-43 inclusions', 'TDP-43 immunoreactive', "
+            "'TDP-43 protein deposits', 'ALS-TDP', 'pTDP-43'. "
+            "If TDP-43 is not mentioned → output 0. "
+            "Use 8 only if TDP-43 staining was explicitly not performed. "
             "Note: hippocampal sclerosis in the elderly often has associated TDP-43 pathology."
         ),
     )
-    NACCPRIO: Optional[YesNoCode] = Field(
-        None,
+    NACCPRIO: YesNoCode = Field(
         description=(
             "Prion disease present as a neuropathological diagnosis. "
             "Codes: 0=No, 1=Yes, 8=Not assessed, 9=Unknown. "
@@ -788,6 +875,7 @@ class DiagnosticCodes(BaseModel):
             "gliosis, PrP immunoreactivity, amyloid plaques (kuru-type or florid). "
             "Look for: 'Creutzfeldt-Jakob disease', 'CJD', 'prion disease', "
             "'spongiform encephalopathy', 'PrP-positive', 'spongiform change consistent with prion'. "
+            "If not mentioned in the report → code 0. "
             "Code 1 if prion disease is diagnosed (confirmed or suspected on pathology)."
         ),
     )
@@ -797,7 +885,7 @@ class DiagnosticCodes(BaseModel):
     )
     @classmethod
     def val_binary_diag(cls, v):
-        if v is not None and v not in {1, 2}:
+        if v not in {1, 2}:
             raise ValueError(
                 f"Primary/contributing diagnosis field must be 1 or 2, got {v}"
             )
@@ -808,42 +896,33 @@ class DiagnosticCodes(BaseModel):
 # Top-level extraction model
 # ---------------------------------------------------------------------------
 
-
 class NeuropathologyExtraction(BaseModel):
-    """Structured NACC neuropathology extraction — 40 variables + per-field annotations.
+    """Structured NACC neuropathology extraction — 43 variables + per-field annotations.
 
     Priority fields (extract with highest care):
       NPSEX, NPFIX, NPWBRWT, NPGRLA, NPGRHA, NPGRSNH, NPGRLCH,
       NACCAVAS, NPLINF, NPLAC, NPHEM, NPWMR, NPNLOSS, NACCCBD, NPPVASC
     """
-
     model_config = ConfigDict(extra="forbid")
 
     specimen_info: SpecimenInfo = Field(
-        default_factory=SpecimenInfo,
         description="Specimen details — PRIORITY: NPSEX, NPFIX, NPWBRWT",
     )
     gross_findings: GrossFindings = Field(
-        default_factory=GrossFindings,
         description="Gross findings — PRIORITY: NPGRLA, NPGRHA, NPGRSNH, NPGRLCH",
     )
     vascular_pathology: VascularPathology = Field(
-        default_factory=VascularPathology,
         description="Vascular pathology — PRIORITY: NACCAVAS, NPLINF, NPLAC, NPHEM, NPWMR",
     )
     microscopic_findings: MicroscopicFindings = Field(
-        default_factory=MicroscopicFindings,
         description="Microscopic findings — PRIORITY: NPNLOSS",
     )
     ad_pathology: ADPathology = Field(
-        default_factory=ADPathology,
         description="AD ABC scores: Thal phase / Braak stage / CERAD / ADNC",
     )
     diagnostic_codes: DiagnosticCodes = Field(
-        default_factory=DiagnosticCodes,
         description="Final diagnoses — PRIORITY: NACCCBD, NPPVASC",
     )
-
     field_annotations: Optional[Dict[str, FieldAnnotation]] = Field(
         None,
         description=(
@@ -853,7 +932,7 @@ class NeuropathologyExtraction(BaseModel):
             "(e.g. a finding is mentioned but cannot be coded). "
             "Omit entries for null variables that are simply absent from the report. "
             "Each entry is an object with three keys: "
-            "(1) 'confidence': float 0.0–1.0 — certainty this value is correct "
+            "(1) 'confidence': float 0.0-1.0 — certainty this value is correct "
             "(1.0=exact match; 0.8=clearly implied; 0.6=indirect inference; 0.4=ambiguous guess; "
             "below 0.4: prefer null instead of guessing); "
             "(2) 'evidence': string — verbatim phrase or sentence from the report that drove the decision "
@@ -861,7 +940,7 @@ class NeuropathologyExtraction(BaseModel):
             "(3) 'note': string or null — brief reasoning note ONLY when extraction was non-trivial "
             "(ambiguous language, had to choose between codes, conflicting statements); "
             "leave null for straightforward extractions. "
-            'Example: {"NPGRHA": {"confidence": 0.9, "evidence": "moderate hippocampal atrophy bilaterally", "note": null}}'
+            'Example: {"NPGRHA": {"confidence": 0.6, "evidence": "hippocampus measures 10 mm", "note": "raw measurement only, no explicit grade; coded 9"}}'
         ),
     )
     extraction_confidence: Optional[str] = Field(
@@ -875,7 +954,7 @@ class NeuropathologyExtraction(BaseModel):
             "report refers to addenda not provided, or systemic ambiguity affecting many variables."
         ),
     )
-
+    
     @model_validator(mode="after")
     def confidence_is_valid(self) -> "NeuropathologyExtraction":
         if self.extraction_confidence and self.extraction_confidence not in {
@@ -887,23 +966,38 @@ class NeuropathologyExtraction(BaseModel):
                 "extraction_confidence must be 'high', 'moderate', or 'low'"
             )
         return self
-
+    
     @model_validator(mode="after")
     def validate_derived_consistency(self) -> "NeuropathologyExtraction":
         """Soft-check derived fields are consistent with their source fields."""
         vp = self.vascular_pathology
         # NACCINF should be 1 if NPLINF=1 or NPLAC=1
         if vp.NACCINF == 0 and (
-            vp.NPLINF and vp.NPLINF.value == 1 or vp.NPLAC and vp.NPLAC.value == 1
+            (vp.NPLINF is not None and vp.NPLINF.value == 1) or 
+            (vp.NPLAC is not None and vp.NPLAC.value == 1)
         ):
             raise ValueError(
                 "NACCINF=0 (no infarcts) but NPLINF or NPLAC is 1 (present) — inconsistent."
             )
         # NACCHEM should be 1 if NPHEM=1
-        if vp.NACCHEM == 0 and vp.NPHEM and vp.NPHEM.value == 1:
+        if vp.NACCHEM == 0 and vp.NPHEM is not None and vp.NPHEM.value == 1:
             raise ValueError(
                 "NACCHEM=0 (no hemorrhage) but NPHEM=1 (present) — inconsistent."
             )
+        return self
+    
+    @model_validator(mode="after")
+    def enforce_null_policy(self) -> "NeuropathologyExtraction":
+        nullable = {"NPSEX", "NPFIX", "NPFIXX"}
+        for section in [
+            self.specimen_info, self.gross_findings, self.vascular_pathology,
+            self.microscopic_findings, self.ad_pathology, self.diagnostic_codes
+        ]:
+            for field_name in section.model_fields:
+                if field_name not in nullable and getattr(section, field_name) is None:
+                    raise ValueError(
+                        f"{field_name} must not be null — use 0, 8, or 9 instead."
+                    )
         return self
 
 
@@ -966,9 +1060,14 @@ def build_format_instructions(model: Optional[Type[BaseModel]] = None) -> str:
         model = get_extraction_model()
 
     lines = [
-        "Respond with a single JSON object conforming to this schema:",
+        "Respond with a single JSON object with EXACTLY these top-level keys:",
         "",
-        f"Root model: {model.__name__}",
+        "  specimen_info, gross_findings, vascular_pathology,",
+        "  microscopic_findings, ad_pathology, diagnostic_codes,",
+        "  field_annotations, extraction_confidence, extraction_notes",
+        "",
+        "Each top-level key maps to a nested object containing its variables.",
+        "NEVER output variables at the root level — they must always be nested.",
         "",
         "PRIORITY fields — extract these with the highest care:",
         "  NPSEX, NPFIX, NPWBRWT, NPGRLA, NPGRHA, NPGRSNH, NPGRLCH,",
@@ -978,12 +1077,28 @@ def build_format_instructions(model: Optional[Type[BaseModel]] = None) -> str:
         "  NACCVASC (from NACCAVAS/NPLINF/NPLAC/NPHEM/NPWMR/NACCARTE),",
         "  NACCINF (from NPLINF+NPLAC), NACCHEM (from NPHEM), NACCLEWY (from NPLBOD)",
         "",
+        "NULL POLICY — null is valid for ONLY these three variables:",
+        "  NPSEX: null if sex is not stated anywhere in the report.",
+        "  NPFIX: null if fixative is not mentioned in the report.",
+        "  NPFIXX: null always EXCEPT when NPFIX=7 (Other), in which case populate it.",
+        "For every other variable you MUST output an explicit numeric code — never null.",
+        "  If a finding was assessed and absent → 0",
+        "  If a structure was explicitly not examined or stain not performed → 8",
+        "  If examined or mentioned but severity/result cannot be determined → 9",
+        "",
     ]
     for name, info in model.model_fields.items():
-        lines.extend(describe_field(name, info, indent=0))
+        raw_ann = info.annotation
+        inner, _ = unwrap_optional(raw_ann)
+        if isinstance(inner, type) and issubclass(inner, BaseModel):
+            lines.append(f"[{name}]")
+            for sub_name, sub_info in inner.model_fields.items():
+                lines.extend(describe_field(sub_name, sub_info, indent=1))
+            lines.append("")
+        else:
+            lines.extend(describe_field(name, info, indent=0))
     lines += [
         "",
-        "Use null for any field whose value cannot be determined from the report.",
         "Do not invent information. Extract only what is explicitly stated or clearly implied.",
         "All integer codes must be exact values from the allowed set in each description.",
     ]
