@@ -5,15 +5,15 @@ extracts structured data via schema-driven prompting, validates with Pydantic,
 and re-asks on validation failure.
 
 Supported models:
-    oss-120b    → openai/gpt-oss-120b
-    oss-20b     → openai/gpt-oss-20b
-    llama3.1-8b → meta-llama/Llama-3.1-8B-Instruct
+    oss-120b    -> openai/gpt-oss-120b
+    oss-20b     -> openai/gpt-oss-20b
+    llama3.1-8b -> meta-llama/Llama-3.1-8B-Instruct
+    qwen2.5-14b -> Qwen/Qwen2.5-14B-Instruct
 
 Usage:
     python main.py -i report.txt -m oss-120b --num-gpus 4
     python main.py -i report.pdf -m oss-20b --num-gpus 2
     python main.py -i report.txt -m llama3.1-8b
-    python main.py -i report.pdf -m oss-120b --num-gpus 4 -o result.json
 """
 
 from __future__ import annotations
@@ -23,6 +23,7 @@ import json
 import logging
 import os
 import sys
+import re
 from pathlib import Path
 from typing import Optional, Type
 
@@ -30,7 +31,7 @@ import torch
 from pydantic import BaseModel, ValidationError
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-from schema_full import build_format_instructions, get_extraction_model
+from schema import build_format_instructions, get_extraction_model
 
 logger = logging.getLogger("medace")
 
@@ -42,13 +43,14 @@ MODEL_ALIASES: dict[str, str] = {
     "oss-120b": "openai/gpt-oss-120b",
     "oss-20b": "openai/gpt-oss-20b",
     "llama3.1-8b": "meta-llama/Llama-3.1-8B-Instruct",
+    "qwen2.5-14b": "Qwen/Qwen2.5-14B-Instruct",
 }
 
 SUPPORTED_ALIASES = list(MODEL_ALIASES.keys())
 
 
 def resolve_model(alias: str) -> str:
-    """Map short alias → full HF model ID.  Pass-through if already full."""
+    """Map short alias -> full HF model ID.  Pass-through if already full."""
     return MODEL_ALIASES.get(alias, alias)
 
 
@@ -66,7 +68,7 @@ def load_report(path: Path, fmt: Optional[str] = None) -> str:
 
 
 def read_pdf(path: Path) -> str:
-    """Extract text from PDF.  pymupdf (fast) → pdfplumber (fallback)."""
+    """Extract text from PDF.  pymupdf (fast) -> pdfplumber (fallback)."""
     for mod_name in ("pymupdf", "fitz"):
         try:
             import importlib
@@ -134,7 +136,7 @@ def load_model(
     )
     model = AutoModelForCausalLM.from_pretrained(
         model_id,
-        torch_dtype=torch_dtype,
+        dtype=torch_dtype,
         device_map="auto",
         trust_remote_code=True,
     )
@@ -185,6 +187,7 @@ def generate_text(
             top_p=top_p if do_sample else None,
             do_sample=do_sample,
             pad_token_id=tokenizer.pad_token_id,
+            repetition_penalty=1.1,
         )
     # strip prompt tokens, keep special tokens for channel parsing
     generated = outputs[0, inputs["input_ids"].shape[1] :]
@@ -204,13 +207,12 @@ You are a clinical NLP system that extracts structured NACC neuropathology varia
 
 EXTRACTION RULES:
 - Extract only what is explicitly stated or clearly implied by the report text.
-- Use null for any field not determinable from the report.
-- Do not hallucinate values. If a structure is not mentioned, do not infer its status.
+- Do not hallucinate values.
 - All numeric codes must be exact integers from the allowed set in each field's description.
 - For NPWBRWT: extract the numeric value in grams as a float (e.g. 991.7, 1200.0).
 - For severity scales: map report language carefully:
     "mild" → 1, "moderate" → 2, "severe" → 3, "no/none/absent" → 0.
-    "moderate to severe" or "moderately severe" → 3 (Severe).
+    "mild to moderate" → 2 (Moderate) or "moderate to severe" or "moderately severe" → 3 (Severe).
 - For PresentAbsent fields (NPLINF, NPLAC, NPHEM): 1=Present/Yes, 2=Absent/No.
 
 ANNOTATION RULES (field_annotations):
@@ -218,14 +220,15 @@ ANNOTATION RULES (field_annotations):
 - evidence: copy the exact phrase or sentence from the report that drove your decision.
 - note: write a brief reasoning note ONLY when the extraction required judgment (indirect language,
   ambiguous severity, conflicting statements). Leave null for clear-cut extractions.
-- confidence: assign a float 0.0–1.0 reflecting how certain you are:
+- confidence: assign a float 0.0-1.0 reflecting how certain you are:
     1.0 = exact match, unambiguous language
     0.8 = clearly implied, minor paraphrase
     0.6 = indirect or requires inference
     0.4 = ambiguous, best guess among plausible codes
     below 0.4 = consider leaving field null instead
 
-OUTPUT: valid JSON only — no markdown fences, no commentary before or after the JSON object.\
+OUTPUT: valid JSON only — no markdown fences, no commentary before or after the JSON object.
+- field_annotations.evidence must always be a single string, never a list or array.\
 """
 
 USER_PROMPT = "NEUROPATHOLOGY REPORT:\n\n{report_text}"
@@ -244,24 +247,30 @@ def build_messages(report_text: str, model_cls: Type[BaseModel]) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 
+def strip_special_tokens(text: str) -> str:
+    """Remove <|...|> tokens so raw model output is safe to embed in message content."""
+    import re
+    return re.sub(r"<\|[^|]*\|>", "", text).strip()
+
+
 def strip_json_fences(text: str) -> str:
     """Extract JSON from model output.
     Handles gpt-oss channel format, ```json fences, and extra trailing data.
     """
     text = text.strip()
 
+    text = re.sub(r"<report_analysis>.*?</report_analysis>", "", text, flags=re.DOTALL).strip()
+    
     # gpt-oss channel format: extract content from final channel
     if "<|channel|>final<|message|>" in text:
-        start = text.find("<|channel|>final<|message|>") + len(
-            "<|channel|>final<|message|>"
-        )
+        start = text.find("<|channel|>final<|message|>") + len("<|channel|>final<|message|>")
         end = text.find("<|end|>", start)
         text = text[start:end].strip() if end != -1 else text[start:].strip()
         logger.debug("Extracted from final channel: %r", text)
 
     # handle <|return|> end token
     if "<|return|>" in text:
-        text = text[: text.find("<|return|>")].strip()
+        text = text[:text.find("<|return|>")].strip()
 
     # remove ```json fences
     if text.startswith("```json"):
@@ -310,6 +319,7 @@ def extract(
     last_error: Optional[Exception] = None
 
     for attempt in range(1, max_retries + 1):
+        torch.cuda.empty_cache()
         logger.info("attempt %d/%d", attempt, max_retries)
 
         raw = generate_text(
@@ -331,8 +341,10 @@ def extract(
         except json.JSONDecodeError as e:
             last_error = e
             logger.warning("JSON decode failed: %s", e)
+            logger.error("RAW MALFORMED JSON:\n%s", cleaned)
+            assistant_content = cleaned if cleaned.startswith("{") else ""
             current_messages = list(base_messages) + [
-                {"role": "assistant", "content": cleaned},
+                {"role": "assistant", "content": assistant_content},
                 {
                     "role": "user",
                     "content": f"Your response was not valid JSON. Error: {e}. Output valid JSON only.",
@@ -348,8 +360,8 @@ def extract(
             logger.warning(
                 "Validation failed (%d errors): %s", e.error_count(), e.errors()
             )
+            logger.error("RAW MALFORMED JSON:\n%s", cleaned)
             current_messages = list(base_messages) + [
-                {"role": "assistant", "content": cleaned},
                 {
                     "role": "user",
                     "content": (
@@ -374,23 +386,30 @@ def parse_args() -> argparse.Namespace:
         description="Extract structured data from a neuropathology report (local HF model)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="Model aliases: "
-        + ", ".join(f"{k} → {v}" for k, v in MODEL_ALIASES.items()),
+        + ", ".join(f"{k} -> {v}" for k, v in MODEL_ALIASES.items()),
     )
     ap.add_argument(
         "-i", "--input", required=True, type=Path, help="Path to report (.txt or .pdf)"
     )
     ap.add_argument(
         "-o",
-        "--output",
+        "--output-dir",
         type=Path,
         default=None,
-        help="Output JSON path (default: <input>.extracted.json)",
+        help="Directory to write output JSON files",
     )
     ap.add_argument(
         "-m",
         "--model",
         required=True,
         help=f"Model alias ({', '.join(SUPPORTED_ALIASES)}) or full HF model ID",
+    )
+    ap.add_argument(
+        "--seeds",
+        type=int,
+        nargs="+",
+        default=None,
+        help="One or more seeds to run (e.g. --seeds 0 1 2 3 4)",
     )
     ap.add_argument(
         "--num-gpus", type=int, default=1, help="Number of GPUs to use (default: 1)"
@@ -400,7 +419,7 @@ def parse_args() -> argparse.Namespace:
         type=str,
         default="auto",
         choices=["auto", "bfloat16", "float16"],
-        help="Model dtype (default: auto → bfloat16)",
+        help="Model dtype (default: auto -> bfloat16)",
     )
     ap.add_argument(
         "--input-format",
@@ -412,22 +431,19 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--temperature", type=float, default=0.01)
     ap.add_argument("--top-p", type=float, default=0.9)
     ap.add_argument(
-        "--max-new-tokens",
-        type=int,
-        default=32768,
-        help="Max new tokens to generate (default: 32768)",
-    )
-    ap.add_argument("--max-retries", type=int, default=3)
-    ap.add_argument(
-        "--seed", type=int, default=None, help="Random seed for reproducibility"
-    )
-    ap.add_argument(
         "--reasoning-effort",
         type=str,
         default="medium",
         choices=["low", "medium", "high"],
         help="Reasoning effort for gpt-oss models (default: medium; ignored by other models)",
     )
+    ap.add_argument(
+        "--max-new-tokens",
+        type=int,
+        default=32768,
+        help="Max new tokens to generate (default: 32768)",
+    )
+    ap.add_argument("--max-retries", type=int, default=3)
     ap.add_argument("--verbose", action="store_true")
     return ap.parse_args()
 
@@ -444,39 +460,59 @@ def main() -> None:
         logger.error("file not found: %s", args.input)
         sys.exit(1)
 
+    seeds = args.seeds if args.seeds is not None else [0]
+    out_dir = args.output_dir or args.input.parent
+
+    # Check if all seeds already have outputs — skip everything if so
+    pending_seeds = []
+    for seed in seeds:
+        out_path = out_dir / f"{args.input.stem}_seed{seed}.extracted.json"
+        if out_path.exists():
+            logger.info("skipping seed %d — output already exists: %s", seed, out_path)
+        else:
+            pending_seeds.append(seed)
+
+    if not pending_seeds:
+        logger.info("all seeds already processed, nothing to do")
+        return
+    
     report_text = load_report(args.input, args.input_format)
     logger.info("loaded %d chars from %s", len(report_text), args.input)
 
     # --- resolve & load model ---
     model_id = resolve_model(args.model)
-    logger.info("model: %s → %s", args.model, model_id)
+    logger.info("model: %s -> %s", args.model, model_id)
 
     model, tokenizer = load_model(model_id, num_gpus=args.num_gpus, dtype=args.dtype)
 
     # --- extract ---
     model_cls = get_extraction_model()
-    result = extract(
-        report_text,
-        model,
-        tokenizer,
-        model_cls=model_cls,
-        temperature=args.temperature,
-        top_p=args.top_p,
-        max_new_tokens=args.max_new_tokens,
-        max_retries=args.max_retries,
-        seed=args.seed,
-        reasoning_effort=args.reasoning_effort,
-    )
 
-    # --- output ---
-    out_data = result.model_dump(mode="json")
-    out_path = args.output or args.input.with_suffix(".extracted.json")
-    out_path.write_text(
-        json.dumps(out_data, indent=2, ensure_ascii=False), encoding="utf-8"
-    )
-    logger.info("wrote %s", out_path)
+    for seed in pending_seeds:
+        out_path = out_dir / f"{args.input.stem}_seed{seed}.extracted.json"
+        logger.info("running seed %d -> %s", seed, out_path)
 
-    print(json.dumps(out_data, indent=2, ensure_ascii=False))
+        result = extract(
+            report_text,
+            model,
+            tokenizer,
+            model_cls=model_cls,
+            temperature=args.temperature,
+            top_p=args.top_p,
+            max_new_tokens=args.max_new_tokens,
+            max_retries=args.max_retries,
+            seed=seed,
+            reasoning_effort=args.reasoning_effort,
+        )
+
+        # --- output ---
+        out_data = result.model_dump(mode="json")
+        out_path.write_text(
+            json.dumps(out_data, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
+        logger.info("wrote %s", out_path)
+
+        print(json.dumps(out_data, indent=2, ensure_ascii=False))
 
 
 if __name__ == "__main__":

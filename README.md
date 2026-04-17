@@ -13,14 +13,17 @@ Given a neuropathology report (PDF or plain text), this tool:
 5. If validation fails, feeds the errors back to the LLM and re-asks (up to N retries)
 6. Writes a clean JSON file with extracted variables and per-field annotations
 
-The key idea: **`schema_full.py` is the single source of truth.** You define what to extract there — field names, types, constraints, enums, descriptions — and the pipeline auto-generates the LLM prompt, validates the output, and handles retries. No prompt editing needed.
+The key idea: **`schema.py` is the single source of truth** for the extraction schema. You define what to extract there — field names, types, constraints, enums, descriptions — and the pipeline auto-generates the LLM prompt, validates the output, and handles retries. No prompt editing needed.
 
 ## Project Structure
 
 ```
+├── seeds_analysis/
+│   └── analyze_seeds.py # Consistency analysis across multi-seed runs
 ├── main.py          # CLI entry point: load model, run extraction, write JSON
-├── schema_full.py   # Pydantic schema: defines all 40 NACC fields, validators, descriptions
-├── analyze_seeds.py # Consistency analysis across multi-seed runs
+├── schema.py        # Pydantic schema: defines all 43 NACC fields, validators, descriptions
+├── run_neuro.slurm  # SLURM job submission script
+├── requirements.txt
 └── README.md
 ```
 
@@ -30,25 +33,20 @@ The key idea: **`schema_full.py` is the single source of truth.** You define wha
 
 - Python 3.10+
 - CUDA-capable GPU(s) with sufficient VRAM
-- HuggingFace model access (may require `huggingface-cli login` for gated models)
+- HuggingFace model access (may require `hf auth login` for gated models)
 
 ### Install Dependencies
 
 ```bash
-pip install torch transformers accelerate pydantic
-
-# for PDF support (install at least one):
-pip install pymupdf       # recommended, fast C backend
-# or
-pip install pdfplumber    # pure-python alternative
+pip install -r requirements.txt
 ```
 
 ## Supported Models
 
 | Alias | HuggingFace Model ID | Notes |
 |---|---|---|
-| `oss-120b` | `openai/gpt-oss-120b` | MoE, strongest extraction quality; supports `--reasoning-effort` |
 | `oss-20b` | `openai/gpt-oss-20b` | MoE, good balance of speed and quality; supports `--reasoning-effort` |
+| `qwen2.5-14b` | `Qwen/Qwen2.5-14B-Instruct` | MoE, good balance of speed and quality |
 | `llama3.1-8b` | `meta-llama/Llama-3.1-8B-Instruct` | Dense, fastest inference |
 
 You can also pass any full HuggingFace model ID directly (e.g., `-m mistralai/Mistral-7B-Instruct-v0.3`).
@@ -58,7 +56,7 @@ You can also pass any full HuggingFace model ID directly (e.g., `-m mistralai/Mi
 ### Basic usage (plain text report)
 
 ```bash
-python main.py -i report.txt -m oss-120b --num-gpus 4
+python main.py -i report.txt -m qwen2.5-14b --num-gpus 1
 ```
 
 ### PDF report
@@ -67,29 +65,44 @@ python main.py -i report.txt -m oss-120b --num-gpus 4
 python main.py -i report.pdf -m oss-20b --num-gpus 2
 ```
 
-### Specify output path
-
-```bash
-python main.py -i report.pdf -m llama3.1-8b -o results/patient_001.json
-```
-
 ### All options
 
 ```bash
 python main.py \
   -i report.pdf \                   # input file (required)
-  -m oss-120b \                     # model alias or full HF ID (required)
-  --num-gpus 4 \                    # number of GPUs (default: 1)
+  -o output \                       # path to write output JSON files
+  -m oss-20b \                      # model alias or full HF ID (required)
+  --seeds 0 1 2 3 4 \               # run extraction with multiple random seeds
+  --num-gpus 1 \                    # number of GPUs (default: 1)
   --dtype bfloat16 \                # model dtype: auto, bfloat16, float16 (default: auto)
   --input-format pdf \              # force input format: text or pdf (default: auto-detect)
   --temperature 0.01 \              # sampling temperature (default: 0.01)
   --top-p 0.9 \                     # nucleus sampling top-p (default: 0.9)
   --reasoning-effort medium \       # reasoning effort for gpt-oss models: low/medium/high (default: medium)
-  --max-new-tokens 32768 \          # max tokens to generate (default: 32768)
+  --max-new-tokens 16384 \          # max tokens to generate (default: 32768)
   --max-retries 3 \                 # validation retry attempts (default: 3)
-  --seed 42 \                       # random seed for reproducibility
   --verbose \                       # debug logging
-  -o output.json                    # output path (default: <input>.extracted.json)
+```
+
+## Running on HPC (SLURM)
+
+The project includes a SLURM job script for batch processing reports on GPU clusters.
+
+```bash
+sbatch run_neuro.slurm
+```
+
+The script will:
+
+1. Create/activate the project virtual environment
+2. Install dependencies from requirements.txt
+3. Load the Qwen2.5-14B model
+4. Run extraction across all reports
+5. Execute multiple seeds (default: 0–4)
+6. Save outputs in:
+
+```bash
+output/qwen2.5-14b/
 ```
 
 ## Output Format
@@ -99,50 +112,50 @@ The output is a JSON file with two layers: the extracted NACC variables (nested 
 ```json
 {
   "specimen_info": {
-    "NPSEX": 1,
+    "NPSEX": null,
     "NPFIX": 1,
-    "NPWBRWT": 1219.2,
+    "NPWBRWT": 991.7,
     "NPWBRF": 1,
-    "NPPMIH": null,
+    "NPPMIH": 99.9,
     "NPFIXX": null
   },
   "gross_findings": {
     "NPGRLA": 1,
-    "NPGRHA": 2,
-    "NPGRSNH": 1,
-    "NPGRLCH": 1,
-    "NPGRCCA": null,
+    "NPGRHA": 0,
+    "NPGRSNH": 2,
+    "NPGRLCH": 0,
+    "NPGRCCA": 2,
     "NACCBRNN": 0
   },
   "vascular_pathology": {
-    "NACCAVAS": 2,
+    "NACCAVAS": 3,
     "NPLINF": 2,
     "NPLAC": 2,
     "NPHEM": 2,
-    "NPWMR": 1,
+    "NPWMR": 3,
     "NACCARTE": 3,
     "NACCVASC": 1,
     "NACCINF": 0,
     "NACCHEM": 0
   },
   "microscopic_findings": {
-    "NPNLOSS": 1,
-    "NPHIPSCL": null,
+    "NPNLOSS": 3,
+    "NPHIPSCL": 0,
     "NACCLEWY": 0,
     "NPLBOD": 0
   },
   "ad_pathology": {
-    "NPTHAL": null,
-    "NACCBRAA": null,
-    "NACCNEUR": null,
-    "NPADNC": null,
-    "NACCDIFF": null,
-    "NACCAMY": null
+    "NPTHAL": 4,
+    "NACCBRAA": 1,
+    "NACCNEUR": 0,
+    "NPADNC": 0,
+    "NACCDIFF": 3,
+    "NACCAMY": 3
   },
   "diagnostic_codes": {
     "NACCCBD": 0,
-    "NPPVASC": 1,
-    "NPPAD": 2,
+    "NPPVASC": 2,
+    "NPPAD": 1,
     "NPCAD": 2,
     "NPPLEWY": 2,
     "NPCLEWY": 2,
@@ -150,37 +163,32 @@ The output is a JSON file with two layers: the extracted NACC variables (nested 
     "NPPFTLD": 2,
     "NACCPROG": 0,
     "NACCPICK": 0,
-    "NPFTDTDP": 0,
+    "NPFTDTDP": 1,
     "NACCPRIO": 0
   },
   "field_annotations": {
-    "NPSEX": {
-      "confidence": 1.0,
-      "evidence": "71-year-old male",
-      "note": null
-    },
     "NPWBRWT": {
       "confidence": 1.0,
-      "evidence": "Brain weight: 1219.2 g (fixed)",
+      "evidence": "The fresh brain weighs 991.7 grams.",
       "note": null
     },
-    "NACCAVAS": {
+    "NPADNC": {
       "confidence": 0.8,
-      "evidence": "moderate atherosclerosis of the circle of Willis",
-      "note": null
+      "evidence": "low likelihood",
+      "note": "Composite ADNC interpreted as minimal due to CERAD 0."
     },
-    "NPGRSNH": {
-      "confidence": 0.6,
-      "evidence": "mild pallor of the substantia nigra",
-      "note": "Report says 'mild pallor' — coded as 1 (Mild). Some residual pigmentation visible."
+    "NACCDIFF": {
+      "confidence": 1.0,
+      "evidence": "Diffuse plaques. Severe:",
+      "note": null
     }
   },
-  "extraction_confidence": "moderate",
+  "extraction_confidence": "high",
   "extraction_notes": null
 }
 ```
 
-Fields the LLM cannot determine from the report are `null`. `field_annotations` contains an entry for every non-null field, and for ambiguous null fields where the absence was itself uncertain.
+Most variables must always contain a numeric code (0, 8, or 9). Only NPSEX, NPFIX, and NPFIXX may be `null` when not stated in the report. `field_annotations` contains an entry for every non-null field, and for ambiguous null fields where the absence was itself uncertain.
 
 ### Understanding `field_annotations`
 
@@ -200,20 +208,21 @@ Running the same report with multiple random seeds tests extraction stability. U
 
 ```bash
 # Run 5 seeds
-for seed in 42 123 456 789 1011; do
-    python main.py -i report.pdf -m oss-20b \
-        --seed $seed -o output/report_seed${seed}.extracted.json
-done
+python main.py \
+  -i report.pdf \
+  -m qwen2.5-14b \
+  --seeds 0 1 2 3 4 \
+  -o output
 
 # Compare
-python analyze_seeds.py --output-dir output
+python seeds_analysis/analyze_seeds.py --output-dir output
 ```
 
 High consistency (≥80% majority agreement) across seeds indicates reliable extraction. Low consistency on a variable, combined with low `confidence` in `field_annotations`, pinpoints where the report language is genuinely ambiguous.
 
 ## Customizing the Schema
 
-All extraction fields live in `schema_full.py`. The pipeline reads the schema at runtime, so changes take effect immediately.
+All extraction fields live in `schema.py`. The pipeline reads the schema at runtime, so changes take effect immediately.
 
 ### Adding a new field
 
@@ -271,13 +280,13 @@ If the LLM output fails JSON parsing or Pydantic validation, the errors are appe
 
 ## Troubleshooting
 
-**Out of memory**: Lower `--num-gpus` or use a smaller model. The `oss-*` models are MoE architectures and are more memory-efficient than their parameter count suggests.
+**Out of memory**: Use a smaller model. The `oss-*` models are MoE architectures and are more memory-efficient than their parameter count suggests.
 
-**Model download fails**: Run `huggingface-cli login` and ensure you have access to the model. Some models (e.g., Llama) require accepting a license on the HF model page.
+**Model download fails**: Run `hf auth login` and ensure you have access to the model. Some models (e.g., Llama) require accepting a license on the HF model page.
 
 **PDF extraction is empty**: Try installing `pdfplumber` as a fallback (`pip install pdfplumber`). Some scanned PDFs may need OCR preprocessing — this tool handles text-based PDFs only.
 
-**Validation keeps failing**: Check `--verbose` output. If the model consistently fails on a field, the description in `schema_full.py` may need more disambiguation. The `evidence` field in `field_annotations` in passing outputs will show what language the model is trying to map.
+**Validation keeps failing**: Check `--verbose` output. If the model consistently fails on a field, the description in `schema.py` may need more disambiguation. The `evidence` field in `field_annotations` in passing outputs will show what language the model is trying to map.
 
 **`reasoning_effort` ignored**: This parameter is only consumed by `gpt-oss` models via the chat template. For other models (e.g., Llama) it is silently ignored.
 
