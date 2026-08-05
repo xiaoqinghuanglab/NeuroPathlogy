@@ -2,12 +2,21 @@
 torch>=2.2.0
 transformers>=4.44.0
 accelerate>=0.30.0          # device_map="auto" multi-GPU sharding
+
 huggingface_hub>=0.22.0     
 hf_transfer                 # fast model downloads
 
+# vLLM client
+openai>=1.0.0               # OpenAI-compatible client for vLLM server
+
 # Schema & validation
 pydantic>=2.7.0
+json-repair>=0.30.0
 
 # PDF parsing (install at least one)
 pymupdf>=1.24.0             # recommended — fast, layout-aware
 pdfplumber>=0.11.0          # pure-python fallback
+
+umap-learn
+hdbscan
+openpyxl

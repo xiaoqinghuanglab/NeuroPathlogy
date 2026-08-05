@@ -1,39 +1,104 @@
 # Neuropathology Report Extractor
 
-Structured data extraction from NACC neuropathology autopsy reports using local HuggingFace models with schema-driven prompting, self-correcting validation, and per-field extraction audit trails.
+Structured data extraction from NACC neuropathology autopsy reports,
+using open-weight LLMs served on local GPU infrastructure, with
+schema-driven prompting, self-correcting validation, and per-field
+extraction audit trails. All inference runs on local compute, no report
+text is sent to any external API.
+
+This repository accompanies the manuscript's methodology and contains the
+full extraction pipeline: primary NACC-variable extraction, residual
+(non-NACC) variable discovery, and the downstream ADNC classification
+analysis.
 
 ## What It Does
 
-Given a neuropathology report (PDF or plain text), this tool:
+Given a neuropathology autopsy report (PDF or plain text), the pipeline:
 
 1. Parses the report (auto-detects PDF vs text)
-2. Generates a prompt from the Pydantic schema (so you never write prompts by hand)
-3. Sends it to a locally-loaded LLM on your GPUs
-4. Validates the output against the schema with Pydantic
-5. If validation fails, feeds the errors back to the LLM and re-asks (up to N retries)
-6. Writes a clean JSON file with extracted variables and per-field annotations
+2. Builds the extraction prompt directly from a Pydantic schema class.
+   Each field, its type, and its description are defined once in the
+   schema, and the pipeline turns that definition into the corresponding
+   instruction for the LLM automatically. Adding or changing a field in
+   the schema updates the prompt with it, so nobody edits prompt text by
+   hand.
+3. Sends the prompt to an LLM running on a local vLLM server
+4. Validates the response against the schema with Pydantic
+5. If validation fails, feeds the errors back to the LLM and re-asks
+   (up to N retries)
+6. Writes a clean JSON file with extracted variables and per-field
+   annotations (evidence, confidence, reasoning notes)
 
-The key idea: **`schema.py` is the single source of truth** for the extraction schema. You define what to extract there — field names, types, constraints, enums, descriptions — and the pipeline auto-generates the LLM prompt, validates the output, and handles retries. No prompt editing needed.
+There are two extraction pipelines in this repo:
+
+- **Primary extraction**, the 199 official NACC neuropathology variables,
+  extracted across 7 schema-driven passes to keep prompts within context
+  limits while preserving cross-field dependency integrity.
+- **Residual extraction**, 53 additional variables not covered by the
+  NACC dictionary, surfaced through an LLM-driven discovery pass,
+  embedding/clustering, and human-curated schema review, then extracted
+  per report.
+
+Production runs use **`openai/gpt-oss-20b`** exclusively. `Llama-3.1-8B`
+and `Qwen2.5-14B` were used only during an earlier 4-report ground-truth
+pilot to compare candidate models before selecting OSS-20B for the full
+161-report run.
 
 ## Project Structure
 
 ```
-├── seeds_analysis/
-│   └── analyze_seeds.py # Consistency analysis across multi-seed runs
-├── main.py          # CLI entry point: load model, run extraction, write JSON
-├── schema.py        # Pydantic schema: defines all 43 NACC fields, validators, descriptions
-├── run_neuro.slurm  # SLURM job submission script
+NeuroPathlogy/
+├── config/                        # vLLM serving configs
+│   ├── GPT-OSS_Hopper.yaml
+│   └── Llama_Qwen_Hopper.yaml
+├── data/
+│   └── rdd-np.csv                 # NACC data dictionary (variable reference)
+├── src/
+│   ├── primary_extraction/
+│   │   ├── main.py                # CLI entry point: 7-pass NACC extraction
+│   │   └── schema1a.py ... schema6.py   # Pydantic schema, one per pass
+│   └── residual_extraction/
+│       ├── discovery.py           # Stage 1A, free-text finding discovery
+│       ├── cluster.py             # Stage 1B, embed, cluster, LLM-label
+│       └── extract.py             # Stage 2, per-report residual extraction
+├── slurm/
+│   ├── run_neuro_vllm.slurm       # primary extraction batch job
+│   ├── run_neuro_discovery.slurm  # residual Stage 1A batch job
+│   ├── run_neuro_cluster.slurm    # residual Stage 1B batch job
+│   └── run_neuro_residual.slurm   # residual Stage 2 batch job
+├── analysis/
+│   ├── analyze_seeds.py                # multi-seed consistency analysis
+│   ├── analyze_residual.py             # figures from residual JSON outputs
+│   ├── cohort_summary.py               # cohort stats summary
+│   ├── cohort_by_adnc.py               # cohort stats, stratified by ADNC
+│   ├── compute_confidence_metrics.py   # builds confidence_metrics.csv
+│   ├── visualize_confidence_metrics.py # plots from confidence_metrics.csv
+│   ├── extract_variable_matrix.py      # builds master variable matrix (xlsx)
+│   ├── build_table_s1.py               # builds manuscript Table S1
+│   └── compare_models_gt.py            # GT seed-consistency comparison across models
+├── notebooks/
+│   ├── eda_preprocessing.ipynb
+│   └── model_development.ipynb         # ADNC classification (LR / RF / XGBoost)
 ├── requirements.txt
 └── README.md
 ```
+
+> **Note on paths:** input reports, per-report model outputs, and other
+> generated artifacts (`reports/`, `output/`, `results/`, caches, logs,
+> containers) live outside this repository on the compute cluster and are
+> not tracked in git, see `.gitignore`. `data/rdd-np.csv` (the NACC
+> variable dictionary) is the one reference dataset tracked here.
 
 ## Setup
 
 ### Requirements
 
-- Python 3.10+
-- CUDA-capable GPU(s) with sufficient VRAM
-- HuggingFace model access (may require `hf auth login` for gated models)
+- Python 3.12
+- CUDA-capable GPU(s). Pipeline was run on H100 GPUs
+- vLLM, served via Apptainer container (see `slurm/` scripts for the
+  serving setup)
+- Access to `openai/gpt-oss-20b` (and, for the pilot comparison,
+  `meta-llama/Llama-3.1-8B-Instruct` and `Qwen/Qwen2.5-14B-Instruct`)
 
 ### Install Dependencies
 
@@ -41,130 +106,108 @@ The key idea: **`schema.py` is the single source of truth** for the extraction s
 pip install -r requirements.txt
 ```
 
-## Supported Models
+## Running the Pipeline
 
-| Alias | HuggingFace Model ID | Notes |
-|---|---|---|
-| `oss-20b` | `openai/gpt-oss-20b` | MoE, good balance of speed and quality; supports `--reasoning-effort` |
-| `qwen2.5-14b` | `Qwen/Qwen2.5-14B-Instruct` | MoE, good balance of speed and quality |
-| `llama3.1-8b` | `meta-llama/Llama-3.1-8B-Instruct` | Dense, fastest inference |
+All scripts connect to a vLLM server running locally on the same GPU
+node, rather than loading a model directly in-process or calling an
+external API. The `slurm/` scripts each start that local vLLM server,
+wait for it to be healthy, run the corresponding stage, then shut the
+server down. See each `.slurm` file for the exact sequence and Apptainer
+bind paths.
 
-You can also pass any full HuggingFace model ID directly (e.g., `-m mistralai/Mistral-7B-Instruct-v0.3`).
-
-## Quick Start
-
-### Basic usage (plain text report)
+### 1. Primary extraction (199 NACC variables)
 
 ```bash
-python main.py -i report.txt -m qwen2.5-14b --num-gpus 1
+python src/primary_extraction/main.py \
+    --input report.pdf \
+    --output-dir output/ \
+    --model oss-20b \
+    --seeds 0 1 2 3 4 \
+    --vllm-url http://localhost:PORT \
+    --temperature 0.01 \
+    --top-p 0.9 \
+    --reasoning-effort medium \
+    --max-new-tokens 16384 \
+    --max-retries 3 \
+    --logprobs
 ```
 
-### PDF report
+Batch version: `sbatch slurm/run_neuro_vllm.slurm`
+
+### 2. Residual extraction (53 additional variables)
+
+Three stages, run in order:
+
+**Stage 1A, Discovery.** Reads every report once (single seed since
+breadth matters here, not consistency) and flags clinically significant
+findings not covered by the 199 NACC variables.
 
 ```bash
-python main.py -i report.pdf -m oss-20b --num-gpus 2
+python src/residual_extraction/discovery.py \
+    --input report.pdf \
+    --output-dir output/residual_discovery \
+    --rddnp-path data/rdd-np.csv \
+    --model openai/gpt-oss-20b \
+    --vllm-url http://localhost:PORT \
+    --max-new-tokens 32768
 ```
 
-### All options
+Batch version: `sbatch slurm/run_neuro_discovery.slurm`
+
+**Stage 1B, Embed, cluster, label.** Pools every discovered observation
+across all reports, embeds with PubMedBERT, reduces dimensionality with
+UMAP, clusters with HDBSCAN, then has the LLM label each cluster into a
+candidate variable definition. Produces a draft schema plus a human-review
+spreadsheet (KEEP / DROP / EDIT decisions).
 
 ```bash
-python main.py \
-  -i report.pdf \                   # input file (required)
-  -o output \                       # path to write output JSON files
-  -m oss-20b \                      # model alias or full HF ID (required)
-  --seeds 0 1 2 3 4 \               # run extraction with multiple random seeds
-  --num-gpus 1 \                    # number of GPUs (default: 1)
-  --dtype bfloat16 \                # model dtype: auto, bfloat16, float16 (default: auto)
-  --input-format pdf \              # force input format: text or pdf (default: auto-detect)
-  --temperature 0.01 \              # sampling temperature (default: 0.01)
-  --top-p 0.9 \                     # nucleus sampling top-p (default: 0.9)
-  --reasoning-effort medium \       # reasoning effort for gpt-oss models: low/medium/high (default: medium)
-  --max-new-tokens 16384 \          # max tokens to generate (default: 32768)
-  --max-retries 3 \                 # validation retry attempts (default: 3)
-  --verbose \                       # debug logging
+python src/residual_extraction/cluster.py \
+    --discovery-dir output/residual_discovery \
+    --output-dir output/residual_schema \
+    --rddnp-path data/rdd-np.csv \
+    --vllm-url http://localhost:PORT \
+    --model openai/gpt-oss-20b \
+    --embed-device cuda
 ```
 
-## Running on HPC (SLURM)
+Batch version: `sbatch slurm/run_neuro_cluster.slurm`
 
-The project includes a SLURM job script for batch processing reports on GPU clusters.
+**Stage 1C, Human review** (not a script). The curated KEEP/DROP/EDIT
+spreadsheet from Stage 1B becomes the final residual variable schema.
+
+**Stage 2, Per-report residual extraction**, using the human-curated
+schema:
 
 ```bash
-sbatch run_neuro.slurm
+python src/residual_extraction/extract.py \
+    --input report.pdf \
+    --output-dir output/residual_extraction \
+    --model openai/gpt-oss-20b \
+    --seeds 0 1 2 3 4 \
+    --vllm-url http://localhost:PORT \
+    --max-new-tokens 16384
 ```
 
-The script will:
-
-1. Create/activate the project virtual environment
-2. Install dependencies from requirements.txt
-3. Load the Qwen2.5-14B model
-4. Run extraction across all reports
-5. Execute multiple seeds (default: 0–4)
-6. Save outputs in:
-
-```bash
-output/qwen2.5-14b/
-```
+Batch version: `sbatch slurm/run_neuro_residual.slurm`
 
 ## Output Format
 
-The output is a JSON file with two layers: the extracted NACC variables (nested by domain) and a `field_annotations` block that records the evidence and confidence for every extracted value.
+Each stage writes JSON with the extracted variables plus a
+`field_annotations` block recording the evidence and confidence behind
+every extracted value:
 
 ```json
 {
   "specimen_info": {
     "NPSEX": null,
     "NPFIX": 1,
-    "NPWBRWT": 991.7,
-    "NPWBRF": 1,
-    "NPPMIH": 99.9,
-    "NPFIXX": null
-  },
-  "gross_findings": {
-    "NPGRLA": 1,
-    "NPGRHA": 0,
-    "NPGRSNH": 2,
-    "NPGRLCH": 0,
-    "NPGRCCA": 2,
-    "NACCBRNN": 0
-  },
-  "vascular_pathology": {
-    "NACCAVAS": 3,
-    "NPLINF": 2,
-    "NPLAC": 2,
-    "NPHEM": 2,
-    "NPWMR": 3,
-    "NACCARTE": 3,
-    "NACCVASC": 1,
-    "NACCINF": 0,
-    "NACCHEM": 0
-  },
-  "microscopic_findings": {
-    "NPNLOSS": 3,
-    "NPHIPSCL": 0,
-    "NACCLEWY": 0,
-    "NPLBOD": 0
+    "NPWBRWT": 991.7
   },
   "ad_pathology": {
     "NPTHAL": 4,
     "NACCBRAA": 1,
     "NACCNEUR": 0,
-    "NPADNC": 0,
-    "NACCDIFF": 3,
-    "NACCAMY": 3
-  },
-  "diagnostic_codes": {
-    "NACCCBD": 0,
-    "NPPVASC": 2,
-    "NPPAD": 1,
-    "NPCAD": 2,
-    "NPPLEWY": 2,
-    "NPCLEWY": 2,
-    "NPCVASC": 1,
-    "NPPFTLD": 2,
-    "NACCPROG": 0,
-    "NACCPICK": 0,
-    "NPFTDTDP": 1,
-    "NACCPRIO": 0
+    "NPADNC": 0
   },
   "field_annotations": {
     "NPWBRWT": {
@@ -176,11 +219,6 @@ The output is a JSON file with two layers: the extracted NACC variables (nested 
       "confidence": 0.8,
       "evidence": "low likelihood",
       "note": "Composite ADNC interpreted as minimal due to CERAD 0."
-    },
-    "NACCDIFF": {
-      "confidence": 1.0,
-      "evidence": "Diffuse plaques. Severe:",
-      "note": null
     }
   },
   "extraction_confidence": "high",
@@ -188,45 +226,44 @@ The output is a JSON file with two layers: the extracted NACC variables (nested 
 }
 ```
 
-Most variables must always contain a numeric code (0, 8, or 9). Only NPSEX, NPFIX, and NPFIXX may be `null` when not stated in the report. `field_annotations` contains an entry for every non-null field, and for ambiguous null fields where the absence was itself uncertain.
-
 ### Understanding `field_annotations`
-
-Each entry has three keys:
 
 | Key | Type | Meaning |
 |---|---|---|
 | `confidence` | float 0–1 | Certainty the value is correct. ≥0.8 = unambiguous; 0.6–0.8 = inferred; <0.6 = review recommended |
 | `evidence` | string | Verbatim phrase from the report that drove the extraction decision |
-| `note` | string or null | Reasoning note — only populated when the extraction required judgment (ambiguous language, severity mapping, conflicting statements). Null for straightforward extractions |
+| `note` | string or null | Reasoning note (only populated when extraction required judgment) |
 
 Use `confidence < 0.7` as a filter to identify fields needing human review.
 
 ## Multi-Seed Consistency Analysis
 
-Running the same report with multiple random seeds tests extraction stability. Use `analyze_seeds.py` to compare outputs:
+Each report is run with 5 seeds per stage to test extraction stability.
 
 ```bash
-# Run 5 seeds
-python main.py \
-  -i report.pdf \
-  -m qwen2.5-14b \
-  --seeds 0 1 2 3 4 \
-  -o output
-
-# Compare
-python seeds_analysis/analyze_seeds.py --output-dir output
+python analysis/analyze_seeds.py
 ```
 
-High consistency (≥80% majority agreement) across seeds indicates reliable extraction. Low consistency on a variable, combined with low `confidence` in `field_annotations`, pinpoints where the report language is genuinely ambiguous.
+(Edit the `PIPELINE` switch at the top of the script to choose
+`"primary"` or `"residual"`.)
 
-## Customizing the Schema
+High consistency (≥80% majority agreement) across seeds indicates reliable
+extraction. Low consistency on a variable, combined with low `confidence`
+in `field_annotations`, pinpoints where the report language is genuinely
+ambiguous.
 
-All extraction fields live in `schema.py`. The pipeline reads the schema at runtime, so changes take effect immediately.
+## Customizing the Extraction Schema
+
+Primary-extraction fields live in `src/primary_extraction/schema1a.py`
+through `schema6.py`, one file per pass. Each pass's schema is a Pydantic
+model; the pipeline reads it at runtime and auto-generates the
+corresponding LLM prompt, so schema edits take effect immediately without
+touching prompt text.
 
 ### Adding a new field
 
-Add it to the relevant sub-model with a `Field(description=...)`:
+Add it to the relevant sub-model in the corresponding pass file, with a
+`Field(description=...)`:
 
 ```python
 class SpecimenInfo(BaseModel):
@@ -237,7 +274,9 @@ class SpecimenInfo(BaseModel):
     )
 ```
 
-The `description` string is what the LLM sees. Make it specific: include the full code table, example report phrases, and any disambiguation notes.
+The `description` string is what the LLM sees. Make it specific: include
+the full code table, example report phrases, and any disambiguation
+notes.
 
 ### Supported field types
 
@@ -248,24 +287,7 @@ The `description` string is what the LLM sees. Make it specific: include the ful
 | **Boolean** | `Field(None, description="...")` | True/False |
 | **Enum** | `Optional[SeverityCode]` | Restricted to enum values; allowed list auto-rendered in prompt |
 | **String** | `Field(None, description="...")` | Optional min/max length, regex pattern |
-| **Dict** | `Optional[Dict[str, str]]` | Key-value pairs |
-| **List** | `Optional[List[str]]` | List of items |
-| **Cross-field** | `@model_validator(mode="after")` | Compare multiple fields; used for derived field consistency |
-
-### Adding a new enum
-
-```python
-class FixationType(int, Enum):
-    formalin = 1
-    paraformaldehyde = 2
-    other = 7
-
-class SpecimenInfo(BaseModel):
-    NPFIX: Optional[FixationType] = Field(None,
-        description="Fixation method: 1=Formalin, 2=Paraformaldehyde, 7=Other")
-```
-
-The format instructions will automatically list the allowed integer values.
+| **Cross-field** | `@model_validator(mode="after")` | Compare multiple fields; used for derived-field consistency |
 
 ## How the Re-Ask Loop Works
 
@@ -276,19 +298,35 @@ report → [build prompt from schema] → LLM → [parse JSON] → [Pydantic val
                                         +←——— [feed errors back] ←——+
 ```
 
-If the LLM output fails JSON parsing or Pydantic validation, the errors are appended as a follow-up user message so the model can self-correct. This runs up to `--max-retries` times (default: 3). Derived field consistency is also enforced by Pydantic (e.g., `NACCHEM=0` while `NPHEM=1` will trigger a re-ask with the specific contradiction).
+If the LLM output fails JSON parsing or Pydantic validation, the errors
+are appended as a follow-up message so the model can self-correct, up to
+`--max-retries` times (default: 3). Derived-field consistency is also
+enforced by Pydantic, e.g. `NACCHEM=0` while `NPHEM=1` triggers a re-ask
+with the specific contradiction.
+
+## Downstream Analysis
+
+- **`analysis/`**: consistency checks, cohort summaries, confidence
+  metrics, and the variable matrix / Table S1 generation used in the
+  manuscript.
+- **`notebooks/model_development.ipynb`**: ADNC classification
+  (Logistic Regression, Random Forest, XGBoost) using primary-only and
+  primary+residual feature sets, target `NPADNC_bin`.
 
 ## Troubleshooting
 
-**Out of memory**: Use a smaller model. The `oss-*` models are MoE architectures and are more memory-efficient than their parameter count suggests.
+**Validation keeps failing**: check the model's response with
+`--verbose`/debug logging. If a field consistently fails, its
+`description` in the relevant `schema*.py` file may need more
+disambiguation. The `evidence` field in passing outputs shows what
+language the model is trying to map.
 
-**Model download fails**: Run `hf auth login` and ensure you have access to the model. Some models (e.g., Llama) require accepting a license on the HF model page.
+**`reasoning_effort` ignored**: this parameter is only consumed by
+`gpt-oss` models via the chat template; for other models it is silently
+ignored.
 
-**PDF extraction is empty**: Try installing `pdfplumber` as a fallback (`pip install pdfplumber`). Some scanned PDFs may need OCR preprocessing — this tool handles text-based PDFs only.
-
-**Validation keeps failing**: Check `--verbose` output. If the model consistently fails on a field, the description in `schema.py` may need more disambiguation. The `evidence` field in `field_annotations` in passing outputs will show what language the model is trying to map.
-
-**`reasoning_effort` ignored**: This parameter is only consumed by `gpt-oss` models via the chat template. For other models (e.g., Llama) it is silently ignored.
+**PDF extraction is empty**: some scanned PDFs may need OCR preprocessing
+This tool handles text-based PDFs only.
 
 ## License
 
