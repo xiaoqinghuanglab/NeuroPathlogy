@@ -68,7 +68,7 @@ DELTA_VARS = [
     "brainstem_weight_delta_g",
 ]
 DELTA_LABELS = ["Hemibrain\n(g)", "Cerebral\n(g)", "Cerebellar\n(g)", "Brainstem\n(g)"]
-DELTA_COLORS = [DARK_BLUE, DARK_PINK, TURQUOISE, ORANGE]
+DELTA_COLORS = [DARK_BLUE, DARK_BLUE, DARK_BLUE, DARK_BLUE]
 
 COW_VARS = [
     "cow_basilar_mm",
@@ -173,12 +173,17 @@ def normalize(v):
         return v
 
 
-def majority_vote(values):
+def majority_vote(values, sentinel=CONT_UNKNOWN):
     normed = [normalize(v) for v in values]
     counts = Counter(k for k in normed if k is not None)
     if not counts:
         return None
-    return counts.most_common(1)[0][0]
+    max_count = max(counts.values())
+    candidates = [k for k, c in counts.items() if c == max_count]
+    if len(candidates) == 1:
+        return candidates[0]
+    informative = [c for c in candidates if c != sentinel]
+    return sorted(informative)[0] if informative else sorted(candidates)[0]
 
 
 def load_data(input_dir: Path) -> dict[str, dict]:
@@ -250,6 +255,7 @@ def plot_asymmetry(case_data: dict, out_dir: Path):
 
     ax.set_xticks(positions)
     ax.set_xticklabels(DELTA_LABELS, fontsize=9)
+    ax.set_xlabel("Brain Region", fontsize=10)
     ax.set_ylabel("Weight asymmetry - right minus left (g)", fontsize=10)
     ax.set_title(
         "Bilateral Brain Weight Asymmetry Across the Cohort\n"
@@ -302,6 +308,7 @@ def plot_cow_diameter(case_data: dict, out_dir: Path):
     ax.set_yticks(y)
     ax.set_yticklabels(labels_used, fontsize=9)
     ax.set_xlabel("Diameter (mm)", fontsize=10)
+    ax.set_ylabel("Vessel", fontsize=10)
     ax.set_xlim(0, 6)
     ax.set_title(
         "Circle of Willis Vessel Diameters\n"
@@ -422,6 +429,7 @@ def plot_severity_freq(case_data: dict, out_dir: Path):
 
     ax.set_xticks(x)
     ax.set_xticklabels(ORDINAL_LABELS, fontsize=8, rotation=30, ha="right")
+    ax.set_xlabel("Neuropathological Variable", fontsize=10)
     ax.set_ylabel("Percentage of cases (%)", fontsize=10)
     ax.set_ylim(0, 115)
     ax.set_title(
