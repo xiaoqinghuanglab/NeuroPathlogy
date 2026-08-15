@@ -68,19 +68,22 @@ BLOCK_PALETTE = [
     "#2E7D5A", "#8B0045", "#1A5276", "#6D4C41", "#37474F",
 ]
 
-FONT_FAMILY = "DejaVu Sans"
-DPI         = 600
-
 plt.rcParams.update({
-    "font.family"      : FONT_FAMILY,
-    "font.size"        : 10,
-    "axes.titlesize"   : 12,
-    "axes.labelsize"   : 10,
-    "axes.spines.top"  : False,
-    "axes.spines.right": False,
-    "figure.dpi"       : DPI,
-    "savefig.dpi"      : DPI,
-    "savefig.bbox"     : "tight",
+    "font.family":           "DejaVu Sans",
+    "font.size":             9,
+    "axes.titlesize":        11,
+    "axes.titleweight":      "bold",
+    "axes.labelsize":        10,
+    "axes.labelweight":      "normal",
+    "xtick.labelsize":       8.5,
+    "ytick.labelsize":       8.5,
+    "legend.fontsize":       8,
+    "legend.title_fontsize": 9,
+    "figure.dpi":            150,
+    "savefig.dpi":           600,
+    "savefig.bbox":          "tight",
+    "axes.spines.top":       False,
+    "axes.spines.right":     False,
 })
 
 # ── Schema block mapping ───────────────────────────────────────────────────
@@ -179,7 +182,7 @@ def save(fig: plt.Figure, stem: str) -> None:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     for ext in ("png", "svg"):
         path = OUTPUT_DIR / f"{stem}.{ext}"
-        fig.savefig(path, format=ext)
+        fig.savefig(path, format=ext, facecolor="white")
         logger.info("saved %s", path)
     plt.close(fig)
 
@@ -225,6 +228,8 @@ def plot_cleveland_by_block(df: pd.DataFrame) -> None:
     x_max = 1.02
 
     fig, ax = plt.subplots(figsize=(9, 8))
+    fig.patch.set_facecolor("white")
+    ax.set_facecolor("#FAFAFA")
     y_pos = np.arange(len(block_stats))
 
     ax.hlines(
@@ -238,9 +243,14 @@ def plot_cleveland_by_block(df: pd.DataFrame) -> None:
                edgecolors="white", linewidths=0.5)
 
     for i, (_, row) in enumerate(block_stats.iterrows()):
+        """
         ax.text(row["mean"] + 0.001, i,
                 f"{row['mean']:.3f}", va="center", fontsize=7.5,
                 color="#333333")
+        """
+        ax.annotate(f"{row['mean']:.3f}", xy=(row["mean"], i),
+            xytext=(8, 0), textcoords="offset points",
+            va="center", fontsize=7.5, color="#333333")
 
     ax.axvline(threshold, color=ACCENT_WARN, linewidth=0.8,
                linestyle="--",
@@ -249,6 +259,7 @@ def plot_cleveland_by_block(df: pd.DataFrame) -> None:
     ax.set_yticks(y_pos)
     ax.set_yticklabels(block_stats["block"], fontsize=8.5)
     ax.set_xlabel("Mean Seed Agreement Rate  (error bars = ±1 SD across variables in block)")
+    ax.set_ylabel("Schema Block")
     ax.set_title(
         "Extraction Reliability by Schema Block\n"
         f"OSS-20B · 161 Reports · {len(block_stats)} Blocks · "
@@ -256,11 +267,10 @@ def plot_cleveland_by_block(df: pd.DataFrame) -> None:
         pad=10,
     )
     ax.set_xlim(x_min, x_max)
-    ax.legend(fontsize=8)
     ax.spines["left"].set_visible(False)
     ax.tick_params(left=False)
     ax.grid(axis="x", color="#EEEEEE", linewidth=0.6, zorder=0)
-
+    ax.legend()
     save(fig, "01_cleveland_agreement_by_block")
 
 
@@ -294,6 +304,8 @@ def plot_scatter_agreement_vs_confidence(df: pd.DataFrame) -> None:
     ann_threshold = var_df["agreement"].mean() - var_df["agreement"].std()
 
     fig, ax = plt.subplots(figsize=(11, 9))
+    fig.patch.set_facecolor("white")
+    ax.set_facecolor("#FAFAFA")
 
     # Quadrant shading — subtle background colors
     ax.axvspan(x_min,   q_agree, ymin=0, ymax=1, color=ACCENT_WARN, alpha=0.04, zorder=0)
@@ -331,17 +343,39 @@ def plot_scatter_agreement_vs_confidence(df: pd.DataFrame) -> None:
             "High agree / Low conf\n(model hedges)", va="bottom",
             color=ACCENT_MED, fontsize=7.5, ha="center",
             bbox=dict(boxstyle="round,pad=0.2", fc="white", ec="none", alpha=0.7))
+    
+    MANUAL_OFFSETS = {
+        "NPCOTH1": (10, 16),   # push up and right
+        "NPWMR":   (-35, -14), # push down and left
+    }
 
+    SPECIAL = {
+        "NPCOTH1": {"xytext": (8, 5),  "ha": "right", "va": "center"},
+        "NPWMR":   {"xytext": (8, -2), "ha": "left", "va": "center"},
+    }
+        
     # Annotate all variables below dynamic threshold
     to_label = var_df[var_df["agreement"] < ann_threshold]
     for _, row in to_label.iterrows():
-        ax.annotate(
-            row["variable"],
-            xy=(row["agreement"], row["confidence"]),
-            xytext=(6, 4), textcoords="offset points",
-            fontsize=6.5, color="#333333",
-            arrowprops=dict(arrowstyle="-", color="#AAAAAA", lw=0.5),
-        )
+        var = row["variable"]
+        if var in SPECIAL:
+            opts = SPECIAL[var]
+            ax.annotate(
+                var,
+                xy=(row["agreement"], row["confidence"]),
+                xytext=opts["xytext"], textcoords="offset points",
+                ha=opts["ha"], va=opts["va"],
+                fontsize=6.5, color="#333333",
+                arrowprops=dict(arrowstyle="-", color="#AAAAAA", lw=0.5),
+            )
+        else:
+            ax.annotate(
+                var,
+                xy=(row["agreement"], row["confidence"]),
+                xytext=(6, 4), textcoords="offset points",
+                fontsize=6.5, color="#333333",
+                arrowprops=dict(arrowstyle="-", color="#AAAAAA", lw=0.5),
+            )
 
     ax.set_xlabel(f"Mean Seed Agreement Rate  (median = {q_agree:.3f})")
     ax.set_ylabel(f"Mean LLM Self-Confidence  (median = {q_conf:.3f})")
@@ -372,6 +406,8 @@ def plot_bottom20_grouped(df: pd.DataFrame) -> None:
     width = 0.38
 
     fig, ax = plt.subplots(figsize=(14, 6))
+    fig.patch.set_facecolor("white")
+    ax.set_facecolor("#FAFAFA")
 
     # Single bar for agreement rate
     bars = ax.bar(x, var_df["agreement"],
@@ -461,6 +497,8 @@ def plot_variable_failure_table(df: pd.DataFrame) -> None:
                   "mean_agreement", "mean_confidence", "mean_output_prob"]
 
     fig, ax = plt.subplots(figsize=(14, max(3, len(display) * 0.32 + 0.2)))
+    fig.patch.set_facecolor("white")
+    ax.set_facecolor("#FAFAFA")
     ax.axis("off")
 
     tbl = ax.table(
