@@ -253,7 +253,10 @@ EXTRACTION RULES:
 - For severity scales: map report language carefully:
     "mild" → 1, "moderate" → 2, "severe" → 3, "no/none/absent" → 0.
     "mild to moderate" → 2 (Moderate) or "moderate to severe" or "moderately severe" → 3 (Severe).
-- For PresentAbsent fields (NPLINF, NPLAC, NPHEM): 1=Present/Yes, 2=Absent/No.
+- For PresentAbsent fields, use the complete allowed coding scheme specified in each field's description.
+  Do not assume that 2 always means absent when a field also defines codes for not assessed or unknown.
+- For nullable fields, follow the null policy specified in the format instructions.
+  In particular, do not convert "not mentioned" into 2 when the field allows null.
 - OCR quality may be imperfect: if a word appears misspelled or garbled, infer the most likely intended term from context (e.g. "diqquse" → "diffuse"). Do not skip or null a field solely due to apparent OCR errors.
 
 ANNOTATION RULES (field_annotations):

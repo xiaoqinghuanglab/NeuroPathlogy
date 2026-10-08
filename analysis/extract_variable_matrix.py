@@ -26,7 +26,7 @@ from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
 # ─── CONFIGURE THESE ──────────────────────────────────────────────────────────
-MODE         = "residual"          # "primary"  or  "residual"
+MODE         = "primary"          # "primary"  or  "residual"
 MODEL        = "oss-20b"
 OUTPUT_DIR   = Path("/N/project/ADRD/neuropathoroot/results")
 _MODEL_DIR   = Path(f"/N/project/ADRD/neuropathoroot/output/{MODEL}")

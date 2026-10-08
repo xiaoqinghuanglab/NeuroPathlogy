@@ -2,14 +2,13 @@
 
 # ── SLURM Directives ───────────────────────────────────────────────────────
 #SBATCH -A r01042                                                        # Project allocation
-#SBATCH -J neuropath_extractor                                           # Job name
+#SBATCH -J neuropath_extractor_q                                         # Job name
 #SBATCH -o /N/project/ADRD/neuropathoroot/logs/%x/neuropath_%j_%a.out    # STDOUT (one file per job)
 #SBATCH -e /N/project/ADRD/neuropathoroot/logs/%x/neuropath_%j_%a.err    # STDERR
-#SBATCH -t 24:00:00                                                      # x hours (n PDFs x 5 seeds)
+#SBATCH -t 1:00:00                                                       # x hours (n PDFs x 5 seeds)
 #SBATCH -c 16                                                            # CPU cores
 #SBATCH --mem=256G                                                       # Memory
-#SBATCH -p hopper                                                        # Hopper partition (H100s)
-#SBATCH -q hopper                                                        # QOS for hopper
+#SBATCH -p h100-single                                                   # Hopper partition (H100s)
 #SBATCH --gres=gpu:h100:1                                                # 1x H100 GPU
 #SBATCH --mail-type=END,FAIL                                             # Email on finish or fail
 #SBATCH --mail-user=aantappa@iu.edu                                      # Your email
@@ -19,12 +18,12 @@
 RUN_MODE="prod"   # "gt" = 4-report validation | "prod" = n-report production
 
 PROJECT=/N/project/ADRD/neuropathoroot
-MODEL="openai/gpt-oss-20b"
-MODEL_ALIAS="oss-20b"
+#MODEL="openai/gpt-oss-20b"
+#MODEL_ALIAS="oss-20b"
 #MODEL="meta-llama/Llama-3.1-8B-Instruct"
 #MODEL_ALIAS="llama3.1-8b"
-#MODEL="Qwen/Qwen2.5-14B-Instruct"
-#MODEL_ALIAS="qwen2.5-14b"
+MODEL="Qwen/Qwen2.5-14B-Instruct"
+MODEL_ALIAS="qwen2.5-14b"
 SEEDS=(0 1 2 3 4)
 VENV=$PROJECT/.venv
 SIF=$PROJECT/containers/vllm-gptoss.sif

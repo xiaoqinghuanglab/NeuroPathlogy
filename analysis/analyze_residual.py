@@ -111,7 +111,6 @@ ORDINAL_VARS = [
     "brainstem_atrophy_severity",
     "purkinje_cell_loss_severity",
     "dentate_nucleus_atrophy",
-    "artag_severity",
     "gvd_hippocampus_severity",
     "hirano_bodies_hippocampus_severity",
 ]
@@ -126,7 +125,6 @@ ORDINAL_LABELS = [
     "Brainstem\nAtrophy",
     "Purkinje Cell\nLoss",
     "Dentate Nucleus\nAtrophy",
-    "ARTAG",
     "GVD\nHippocampus",
     "Hirano Bodies\nHippocampus",
 ]
