@@ -77,43 +77,76 @@ class NormalAndInsuffAD(BaseModel):
     """Normal brain dx + insufficient AD dx pairs - 4 variables."""
     model_config = ConfigDict(extra="forbid")
 
-    NPPNORM: int = Field(
+    NPPNORM: Optional[int] = Field(
+        None,
         description=(
             "Normal brain listed as PRIMARY diagnosis. "
-            "Codes: 1=Yes; 2=No. "
-            "Code 1 only if the report explicitly concludes the brain is normal or "
-            "within normal limits for age with no significant pathology. "
-            "If any pathological diagnosis is present → code 2."
+            "Codes: 1=Yes; 2=No; null=Not stated or not determinable from the report. "
+            "Code 1 only if the report explicitly concludes that the brain is normal "
+            "or within normal limits for age with no significant pathology. "
+            "Code 2 only when the report explicitly establishes that a normal-brain "
+            "diagnosis is not present, such as when another specific pathological "
+            "diagnosis is identified as the primary diagnosis. "
+            "Do NOT use 2 merely because 'normal brain' is not mentioned. "
+            "If the report does not provide enough information to determine whether "
+            "normal brain is the primary diagnosis, use null."
         ),
     )
-    NPCNORM: int = Field(
+
+    NPCNORM: Optional[int] = Field(
+        None,
         description=(
             "Normal brain listed as CONTRIBUTING diagnosis. "
-            "Codes: 1=Yes; 2=No. "
-            "Typically 2 in almost all cases. Code 1 only in rare mixed scenarios."
+            "Codes: 1=Yes; 2=No; null=Not stated or not determinable from the report. "
+            "Code 1 only if the report explicitly identifies normal brain as a "
+            "contributing diagnosis. "
+            "Code 2 only when the report explicitly establishes that normal brain "
+            "is not a contributing diagnosis. "
+            "Do NOT use 2 merely because 'normal brain' is not mentioned. "
+            "If the report does not provide enough information to determine whether "
+            "normal brain is a contributing diagnosis, use null."
         ),
     )
-    NPPADP: int = Field(
+
+    NPPADP: Optional[int] = Field(
+        None,
         description=(
             "AD pathology present but insufficient for AD diagnosis - PRIMARY. "
-            "Codes: 1=Yes; 2=No. "
-            "Use when amyloid/tau findings exist but do not meet full NIA-AA criteria for AD. "
-            "e.g., low or intermediate ADNC as primary finding."
+            "Codes: 1=Yes; 2=No; null=Not stated or not determinable from the report. "
+            "Code 1 when the report explicitly identifies subthreshold AD pathology "
+            "as the primary neuropathological diagnosis, such as low or intermediate "
+            "ADNC being the principal finding. "
+            "Code 2 only when the report explicitly establishes that subthreshold AD "
+            "pathology is not the primary diagnosis, such as when another diagnosis is "
+            "explicitly identified as primary and the AD pathology is explicitly assigned "
+            "a contributing/secondary role or explicitly absent. "
+            "Do NOT use 2 merely because insufficient AD pathology is not mentioned. "
+            "If the report does not provide enough information to determine whether "
+            "insufficient AD pathology is the primary diagnosis, use null."
         ),
     )
-    NPCADP: int = Field(
+
+    NPCADP: Optional[int] = Field(
+        None,
         description=(
             "AD pathology present but insufficient for AD diagnosis - CONTRIBUTING. "
-            "Codes: 1=Yes; 2=No. "
-            "Use when subthreshold AD pathology contributes alongside another primary diagnosis."
+            "Codes: 1=Yes; 2=No; null=Not stated or not determinable from the report. "
+            "Code 1 when subthreshold AD pathology is explicitly identified as a "
+            "contributing or secondary neuropathological diagnosis alongside another "
+            "primary diagnosis. "
+            "Code 2 only when the report explicitly establishes that subthreshold AD "
+            "pathology is not a contributing diagnosis. "
+            "Do NOT use 2 merely because insufficient AD pathology is not mentioned. "
+            "If the report does not provide enough information to determine whether "
+            "insufficient AD pathology is a contributing diagnosis, use null."
         ),
     )
 
     @field_validator("NPPNORM", "NPCNORM", "NPPADP", "NPCADP")
     @classmethod
-    def val_binary(cls, v):
-        if v not in {1, 2}:
-            raise ValueError(f"Field must be 1 or 2, got {v}")
+    def val_binary_nullable(cls, v):
+        if v is not None and v not in {1, 2}:
+            raise ValueError(f"Field must be 1, 2, or null, got {v}")
         return v
 
     @model_validator(mode="after")
@@ -129,40 +162,71 @@ class HippocampalAndPrionDx(BaseModel):
     """Hippocampal sclerosis dx + prion dx pairs - 4 variables."""
     model_config = ConfigDict(extra="forbid")
 
-    NPPHIPP: int = Field(
+    NPPHIPP: Optional[int] = Field(
+        None,
         description=(
             "Hippocampal sclerosis listed as PRIMARY diagnosis. "
-            "Codes: 1=Yes; 2=No. "
-            "Code 1 if hippocampal sclerosis is the principal neuropathological finding."
+            "Codes: 1=Yes; 2=No; null=Not stated or not determinable from the report. "
+            "Code 1 only if the report explicitly identifies hippocampal sclerosis "
+            "as the principal neuropathological diagnosis. "
+            "Code 2 only when the report explicitly establishes that hippocampal "
+            "sclerosis is not the primary diagnosis. "
+            "Do NOT use 2 merely because hippocampal sclerosis is not mentioned. "
+            "If the report does not provide enough information to determine whether "
+            "hippocampal sclerosis is the primary diagnosis, use null."
         ),
     )
-    NPCHIPP: int = Field(
+
+    NPCHIPP: Optional[int] = Field(
+        None,
         description=(
             "Hippocampal sclerosis listed as CONTRIBUTING diagnosis. "
-            "Codes: 1=Yes; 2=No. "
-            "Code 1 if hippocampal sclerosis is present but not the primary diagnosis."
+            "Codes: 1=Yes; 2=No; null=Not stated or not determinable from the report. "
+            "Code 1 only if hippocampal sclerosis is explicitly identified as a "
+            "contributing or secondary neuropathological diagnosis. "
+            "Code 2 only when the report explicitly establishes that hippocampal "
+            "sclerosis is not a contributing diagnosis. "
+            "Do NOT use 2 merely because hippocampal sclerosis is not mentioned. "
+            "If the report does not provide enough information to determine whether "
+            "hippocampal sclerosis is a contributing diagnosis, use null."
         ),
     )
-    NPPPRION: int = Field(
+
+    NPPPRION: Optional[int] = Field(
+        None,
         description=(
             "Prion associated disease listed as PRIMARY diagnosis. "
-            "Codes: 1=Yes; 2=No. "
-            "Code 1 if prion disease is the principal neuropathological finding."
+            "Codes: 1=Yes; 2=No; null=Not stated or not determinable from the report. "
+            "Code 1 only if prion disease is explicitly identified as the principal "
+            "neuropathological diagnosis. "
+            "Code 2 only when the report explicitly establishes that prion disease "
+            "is not the primary diagnosis. "
+            "Do NOT use 2 merely because prion disease is not mentioned. "
+            "If the report does not provide enough information to determine whether "
+            "prion disease is the primary diagnosis, use null."
         ),
     )
-    NPCPRION: int = Field(
+
+    NPCPRION: Optional[int] = Field(
+        None,
         description=(
             "Prion associated disease listed as CONTRIBUTING diagnosis. "
-            "Codes: 1=Yes; 2=No. "
-            "Code 1 if prion disease is present but not the primary diagnosis."
+            "Codes: 1=Yes; 2=No; null=Not stated or not determinable from the report. "
+            "Code 1 only if prion disease is explicitly identified as a contributing "
+            "or secondary neuropathological diagnosis. "
+            "Code 2 only when the report explicitly establishes that prion disease "
+            "is not a contributing diagnosis. "
+            "Do NOT use 2 merely because prion disease is not mentioned. "
+            "If the report does not provide enough information to determine whether "
+            "prion disease is a contributing diagnosis, use null."
         ),
     )
 
     @field_validator("NPPHIPP", "NPCHIPP", "NPPPRION", "NPCPRION")
     @classmethod
-    def val_binary(cls, v):
-        if v not in {1, 2}:
-            raise ValueError(f"Field must be 1 or 2, got {v}")
+    def val_binary_nullable(cls, v):
+        if v is not None and v not in {1, 2}:
+            raise ValueError(f"Field must be 1, 2, or null, got {v}")
         return v
 
     @model_validator(mode="after")
@@ -178,10 +242,11 @@ class OtherDxPairs(BaseModel):
     """Other primary/contributing dx pairs with free-text specify - 9 variables."""
     model_config = ConfigDict(extra="forbid")
 
-    NPPOTH1: int = Field(
+    NPPOTH1: Optional[int] = Field(
+        None,
         description=(
             "Other primary pathologic diagnosis 1. "
-            "Codes: 1=Yes; 2=No. Never 0. "
+            "Codes: 1=Yes; 2=No; null=Not stated or not determinable from the report. "
             "Code 1 ONLY if there is a primary diagnosis in the report that has NO dedicated field "
             "anywhere else on the NP form. "
             "The following diagnoses ALL have dedicated fields in other passes and must NEVER appear here: "
@@ -192,28 +257,36 @@ class OtherDxPairs(BaseModel):
             "FTLD-TDP, "
             "FTLD-other (including NIFID, atypical FTLD-U), "
             "ALS/MND, "
-            "Hippocampal sclerosis (→ NPPHIPP/NPCHIPP in this pass), "
-            "Prion disease / CJD (→ NPPPRION/NPCPRION in this pass), "
-            "Down syndrome (→ NACCDOWN in this pass). "
-            "Code 1 for diagnoses with NO dedicated field anywhere — examples: "
-            "Neurodegeneration with Brain Iron Accumulation (NBIA), "
-            "Primary age-related tauopathy (PART) when explicitly named as a separate diagnosis, "
-            "TDP-43 proteinopathy as a standalone finding distinct from FTLD-TDP, "
-            "Biondi bodies, specific tract degeneration (e.g. fasciculus gracilis), "
-            "Corticobasal degeneration when not classified under FTLD-tau. "
-            "Populate NPOTH1X with the diagnosis name when NPPOTH1=1."
+            "Hippocampal sclerosis, "
+            "Prion disease / CJD, "
+            "Down syndrome. "
+            "Code 1 for a qualifying diagnosis with NO dedicated field anywhere else. "
+            "Populate NPOTH1X with the diagnosis name when NPPOTH1=1 or NPCOTH1=1. "
+            "Code 2 only when the report establishes that no qualifying other primary "
+            "diagnosis occupies this position. "
+            "Do NOT use 2 merely because an other primary diagnosis is not mentioned. "
+            "If the report does not provide enough information to determine whether "
+            "a qualifying other primary diagnosis exists in this position, use null."
         ),
     )
-    NPCOTH1: int = Field(
+
+    NPCOTH1: Optional[int] = Field(
+        None,
         description=(
             "Other contributing pathologic diagnosis 1. "
-            "Codes: 1=Yes; 2=No. Never 0. "
-            "Applies the same exclusion logic as NPPOTH1 — diagnoses with dedicated fields must never appear here. "
-            "Code 1 if the diagnosis in NPOTH1X is contributing (secondary) rather than primary. "
-            "NPPOTH1 and NPCOTH1 are mutually exclusive for the same diagnosis: "
-            "a diagnosis is either primary (NPPOTH1=1, NPCOTH1=2) or contributing (NPPOTH1=2, NPCOTH1=1), never both."
+            "Codes: 1=Yes; 2=No; null=Not stated or not determinable from the report. "
+            "Applies the same exclusion logic as NPPOTH1 - diagnoses with dedicated fields "
+            "must never appear here. "
+            "Code 1 if the diagnosis in NPOTH1X is explicitly identified as contributing "
+            "or secondary rather than primary. "
+            "Code 2 only when the report establishes that the diagnosis occupying this "
+            "position is not contributing. "
+            "Do NOT use 2 merely because a contributing other diagnosis is not mentioned. "
+            "If the report does not provide enough information to determine whether "
+            "a qualifying other diagnosis is contributing, use null."
         ),
     )
+
     NPOTH1X: Optional[str] = Field(
         None,
         description=(
@@ -223,23 +296,38 @@ class OtherDxPairs(BaseModel):
             "Valid characters: no single quotes, double quotes, %, or &."
         ),
     )
-    NPPOTH2: int = Field(
+
+    NPPOTH2: Optional[int] = Field(
+        None,
         description=(
             "Other primary pathologic diagnosis 2. "
-            "Codes: 1=Yes; 2=No. Never 0. "
-            "Code 1 only if a second distinct 'other' diagnosis exists beyond the one in NPOTH1X, "
-            "applying the same exclusion logic as NPPOTH1. "
-            "Populate NPOTH2X with the diagnosis name when NPPOTH2=1."
+            "Codes: 1=Yes; 2=No; null=Not stated or not determinable from the report. "
+            "Code 1 only if a second distinct qualifying other diagnosis exists beyond "
+            "the one in NPOTH1X, applying the same exclusion logic as NPPOTH1. "
+            "Populate NPOTH2X with the diagnosis name when NPPOTH2=1 or NPCOTH2=1. "
+            "Code 2 only when the report establishes that no second qualifying other "
+            "primary diagnosis exists in this position. "
+            "Do NOT use 2 merely because a second other primary diagnosis is not mentioned. "
+            "If the report does not provide enough information to determine whether "
+            "a second qualifying other primary diagnosis exists, use null."
         ),
     )
-    NPCOTH2: int = Field(
+
+    NPCOTH2: Optional[int] = Field(
+        None,
         description=(
             "Other contributing pathologic diagnosis 2. "
-            "Codes: 1=Yes; 2=No. Never 0. "
-            "Code 1 if the second diagnosis in NPOTH2X is contributing rather than primary. "
-            "Mutually exclusive with NPPOTH2 for the same diagnosis."
+            "Codes: 1=Yes; 2=No; null=Not stated or not determinable from the report. "
+            "Code 1 if the second diagnosis in NPOTH2X is explicitly identified as "
+            "contributing or secondary rather than primary. "
+            "Code 2 only when the report establishes that the diagnosis occupying this "
+            "position is not contributing. "
+            "Do NOT use 2 merely because a second contributing diagnosis is not mentioned. "
+            "If the report does not provide enough information to determine whether "
+            "a second qualifying other diagnosis is contributing, use null."
         ),
     )
+    
     NPOTH2X: Optional[str] = Field(
         None,
         description=(
@@ -249,23 +337,38 @@ class OtherDxPairs(BaseModel):
             "Valid characters: no single quotes, double quotes, %, or &."
         ),
     )
-    NPPOTH3: int = Field(
+
+    NPPOTH3: Optional[int] = Field(
+        None,
         description=(
             "Other primary pathologic diagnosis 3. "
-            "Codes: 1=Yes; 2=No. Never 0. "
-            "Code 1 only if a third distinct 'other' diagnosis exists beyond NPOTH1X and NPOTH2X, "
-            "applying the same exclusion logic as NPPOTH1. "
-            "Populate NPOTH3X with the diagnosis name when NPPOTH3=1."
+            "Codes: 1=Yes; 2=No; null=Not stated or not determinable from the report. "
+            "Code 1 only if a third distinct qualifying other diagnosis exists beyond "
+            "NPOTH1X and NPOTH2X, applying the same exclusion logic as NPPOTH1. "
+            "Populate NPOTH3X with the diagnosis name when NPPOTH3=1 or NPCOTH3=1. "
+            "Code 2 only when the report establishes that no third qualifying other "
+            "primary diagnosis exists in this position. "
+            "Do NOT use 2 merely because a third other primary diagnosis is not mentioned. "
+            "If the report does not provide enough information to determine whether "
+            "a third qualifying other primary diagnosis exists, use null."
         ),
     )
-    NPCOTH3: int = Field(
+
+    NPCOTH3: Optional[int] = Field(
+        None,
         description=(
             "Other contributing pathologic diagnosis 3. "
-            "Codes: 1=Yes; 2=No. Never 0. "
-            "Code 1 if the third diagnosis in NPOTH3X is contributing rather than primary. "
-            "Mutually exclusive with NPPOTH3 for the same diagnosis."
+            "Codes: 1=Yes; 2=No; null=Not stated or not determinable from the report. "
+            "Code 1 if the third diagnosis in NPOTH3X is explicitly identified as "
+            "contributing or secondary rather than primary. "
+            "Code 2 only when the report establishes that the diagnosis occupying this "
+            "position is not contributing. "
+            "Do NOT use 2 merely because a third contributing diagnosis is not mentioned. "
+            "If the report does not provide enough information to determine whether "
+            "a third qualifying other diagnosis is contributing, use null."
         ),
     )
+
     NPOTH3X: Optional[str] = Field(
         None,
         description=(
@@ -276,13 +379,12 @@ class OtherDxPairs(BaseModel):
         ),
     )
 
-    @field_validator(
-        "NPPOTH1", "NPCOTH1", "NPPOTH2", "NPCOTH2", "NPPOTH3", "NPCOTH3"
-    )
+    @field_validator("NPPOTH1", "NPCOTH1", "NPPOTH2", "NPCOTH2", "NPPOTH3", "NPCOTH3")
+
     @classmethod
-    def val_binary(cls, v):
-        if v not in {1, 2}:
-            raise ValueError(f"Field must be 1 or 2, got {v}")
+    def val_binary_nullable(cls, v):
+        if v is not None and v not in {1, 2}:
+            raise ValueError(f"Field must be 1, 2, or null, got {v}")
         return v
 
     @model_validator(mode="after")
@@ -712,8 +814,41 @@ class Pass4Extraction(BaseModel):
 
     @model_validator(mode="after")
     def enforce_null_policy(self) -> "Pass4Extraction":
-        """Non-nullable fields must not be null."""
-        nullable = {"NPOTH1X", "NPOTH2X", "NPOTH3X", "NACCWRI1", "NACCWRI2", "NACCWRI3"}
+        """Enforce extraction-layer null policy.
+        Nullable fields:
+          NPPNORM, NPCNORM
+          NPPADP, NPCADP
+          NPPHIPP, NPCHIPP
+          NPPPRION, NPCPRION
+          NPPOTH1, NPCOTH1
+          NPPOTH2, NPCOTH2
+          NPPOTH3, NPCOTH3
+          NPOTH1X, NPOTH2X, NPOTH3X
+          NACCWRI1, NACCWRI2, NACCWRI3
+        Other variables must use their explicit NACC-style code.
+        """
+        nullable = {
+            "NPPNORM",
+            "NPCNORM",
+            "NPPADP",
+            "NPCADP",
+            "NPPHIPP",
+            "NPCHIPP",
+            "NPPPRION",
+            "NPCPRION",
+            "NPPOTH1",
+            "NPCOTH1",
+            "NPOTH1X",
+            "NPPOTH2",
+            "NPCOTH2",
+            "NPOTH2X",
+            "NPPOTH3",
+            "NPCOTH3",
+            "NPOTH3X",
+            "NACCWRI1",
+            "NACCWRI2",
+            "NACCWRI3",
+        }
         sections = [
             self.normal_and_insuff_ad, self.hippocampal_and_prion_dx,
             self.other_dx_pairs, self.write_in_dx,
@@ -723,7 +858,9 @@ class Pass4Extraction(BaseModel):
             for field_name in section.model_fields:
                 if field_name not in nullable and getattr(section, field_name) is None:
                     raise ValueError(
-                        f"{field_name} must not be null - use 0, 1, 2, 7, 8, or 9, etc. (depending on variable)."
+                        f"{field_name} must not be null - use its explicit "
+                        "absence, not-assessed, or unknown code as defined for "
+                        "that variable."
                     )
         return self
 
@@ -794,27 +931,50 @@ def build_pass4_format_instructions() -> str:
         "NEVER output variables at the root level - they must always be nested.",
         "",
         "NULL POLICY:",
-        "  Nullable: NPOTH1X, NPOTH2X, NPOTH3X, NACCWRI1, NACCWRI2, NACCWRI3.",
-        "  All other variables must have explicit numeric codes.",
+        "  Nullable primary/contributing diagnosis fields:",
+        "    NPPNORM, NPCNORM, NPPADP, NPCADP,",
+        "    NPPHIPP, NPCHIPP, NPPPRION, NPCPRION,",
+        "    NPPOTH1, NPCOTH1, NPPOTH2, NPCOTH2, NPPOTH3, NPCOTH3.",
+        "  These fields may be 1, 2, or null.",
+        "  null = insufficient information in the report to determine the role.",
+        "  Do NOT use 2 merely because the diagnosis is not mentioned.",
         "",
-        "PRIMARY/CONTRIBUTING PAIRS: use 1=Yes, 2=No only. Never 0.",
+        "  Nullable specify/write-in fields:",
+        "    NPOTH1X, NPOTH2X, NPOTH3X,",
+        "    NACCWRI1, NACCWRI2, NACCWRI3.",
+        "  These remain null when their corresponding parent condition is not met.",
         "",
-        "PRIMARY/CONTRIBUTING MUTEX: each NPPOTHx/NPCOTHx position represents ONE diagnosis.",
-        " Two diagnoses = two positions. Never put two diagnoses in one position.",
-        " NPPOTH1 and NPCOTH1 cannot both be 1 — they are primary/contributing flags for the SAME diagnosis.",
-        " Same rule applies to NPPOTH2/NPCOTH2 and NPPOTH3/NPCOTH3.",
-        " A diagnosis is either primary (NPPOTHx=1, NPCOTHx=2) or contributing (NPPOTHx=2, NPCOTHx=1), not both.",
-        " CORRECT: Position 1: NPPOTH1=2, NPCOTH1=1, NPOTH1X='ADNC'  |  Position 2: NPPOTH2=2, NPCOTH2=1, NPOTH2X='CVD'",
-        " WRONG:   Position 1: NPPOTH1=1, NPCOTH1=1, NPOTH1X='ADNC'  (two diagnoses crammed into one position)",
-        " If no second diagnosis: NPPOTH2=2, NPCOTH2=2, NPOTH2X=null.",
-        " If no third: NPPOTH3=2, NPCOTH3=2, NPOTH3X=null.",
-        " Code 0 is invalid for all pair fields.",
+        "  All other variables must use their explicit numeric/code value; never null.",
+        "  IMPORTANT: 'not mentioned' is not automatically equivalent to No.",
+        "",
+        "PRIMARY/CONTRIBUTING PAIRS:",
+        "  Use 1=Yes, 2=No, or null.",
+        "  null means the report does not provide enough information to determine",
+        "  that specific role.",
+        "  Do NOT use 2 merely because the role is not mentioned.",
+        "  For each pair, both members may be null when the report provides no",
+        "  sufficient information about that diagnosis.",
+        "  The only prohibited state is both members being 1.",
+        "",
+        "PRIMARY/CONTRIBUTING MUTEX FOR OTHER DX POSITIONS:",
+        "  Each NPPOTHx/NPCOTHx position represents ONE diagnosis.",
+        "  Two distinct diagnoses must use two distinct positions.",
+        "  NPPOTH1 and NPCOTH1 cannot both be 1 because they describe",
+        "  the primary/contributing role of the SAME diagnosis in NPOTH1X.",
+        "  The same rule applies to NPPOTH2/NPCOTH2 and NPPOTH3/NPCOTH3.",
+        "  Valid values for each pair field are 1=Yes, 2=No, or null=not determinable.",
+        "  Do NOT use 2 merely because a role or diagnosis is not mentioned.",
+        "  A pair may therefore be (1,2), (1,null), (2,1), (null,1),",
+        "  (2,2), (2,null), (null,2), or (null,null).",
+        "  The only prohibited combination is (1,1).",
+        "  Code 0 is invalid for all pair fields.",
         "",
         "ORDERING RULE: Fill positions in order of clinical significance.",
         " Position 1 (NPPOTH1/NPCOTH1/NPOTH1X) = most clinically significant other diagnosis.",
         " Position 2 (NPPOTH2/NPCOTH2/NPOTH2X) = second most significant.",
         " Position 3 (NPPOTH3/NPCOTH3/NPOTH3X) = least significant or incidental finding.",
-        " Primary diagnoses (NPPOTHx=1) should always be placed before contributing diagnoses (NPPOTHx=2).",
+        " Do not reorder diagnoses solely based on whether they are primary or contributing.",
+        " Fill positions in order of clinical significance, using the same ordering consistently.",        
         "",
         " NPOTH1X/2X/3X are for diagnoses NOT already captured by the primary/contributing pair fields",
         " Do not use NPOTH slots for: AD/ADNC, Lewy body disease, cerebrovascular disease,",

@@ -634,102 +634,144 @@ class ADPathology(BaseModel):
 class PrimaryContribDx(BaseModel):
     """Primary and contributing diagnosis pairs - 8 variables.
 
-    Coding convention: 1=Yes (diagnosis present in this role), 2=No.
-    Zero is NOT a valid code for these fields.
+    Coding convention for the NACC source:
+      1=Yes, 2=No.
+
+    Extraction-layer convention:
+      1=Yes, 2=No, null=not stated / not determinable from the report.
+
+    Null is used only when the report does not provide sufficient information
+    to determine the role. It must not be converted to 2 merely because the
+    diagnosis is not mentioned.
     """
     model_config = ConfigDict(extra="forbid")
 
-    NPPAD: int = Field(
+    NPPAD: Optional[int] = Field(
+        None,
         description=(
             "Alzheimer's disease listed as PRIMARY neuropathological diagnosis. "
-            "Codes: 1=Yes, 2=No. "
-            "Code 1 if the report identifies AD (high ADNC, NPADNC=3) as the primary/principal finding. "
-            "If AD is a contributing co-pathology only → code 2 (and set NPCAD=1 instead). "
-            "Look for: 'primary diagnosis: Alzheimer's disease', 'Alzheimer's disease, NIA-AA high'. "
-            "Decision rule: identify the PRIMARY diagnosis label in the Final Diagnoses section. "
-            "If AD/ADNC is listed first or explicitly labeled primary → NPPAD=1, NPCAD=2. "
-            "If another disease is listed first and AD appears as a secondary finding → NPPAD=2, NPCAD=1. "
-            "If there is no AD pathology at all → NPPAD=2, NPCAD=2."
+            "Codes: 1=Yes; 2=No; null=Not stated or not determinable from the report. "
+            "Code 1 if the report explicitly identifies AD as the primary or principal "
+            "neuropathological diagnosis. "
+            "Code 2 only when the report explicitly establishes that AD is not the primary "
+            "diagnosis, such as when another disease is explicitly identified as primary "
+            "and AD is assigned another role or is explicitly absent. "
+            "Do NOT use 2 merely because AD is not mentioned. "
+            "If the report does not provide enough information to determine whether AD "
+            "is the primary diagnosis, use null."
         ),
     )
-    NPCAD: int = Field(
+
+    NPCAD: Optional[int] = Field(
+        None,
         description=(
             "Alzheimer's disease listed as a CONTRIBUTING (secondary) neuropathological diagnosis. "
-            "Codes: 1=Yes, 2=No. "
-            "Code 1 if AD pathology is present but is NOT the primary diagnosis "
-            "(i.e., another disease is primary). Common in mixed dementia cases. "
-            "Decision rule: if AD is the primary diagnosis → NPPAD=1 and NPCAD=2. "
-            "If AD is secondary to another primary disease → NPPAD=2 and NPCAD=1. "
-            "If no AD pathology at all → both NPPAD=2 and NPCAD=2."
+            "Codes: 1=Yes; 2=No; null=Not stated or not determinable from the report. "
+            "Code 1 if AD pathology is explicitly identified as a contributing or secondary "
+            "neuropathological diagnosis and another disease is primary. "
+            "Code 2 only when the report explicitly establishes that AD is not a contributing "
+            "diagnosis, including when AD is explicitly absent or assigned the primary role. "
+            "Do NOT use 2 merely because AD is not mentioned. "
+            "If the report does not provide enough information to determine whether AD is a "
+            "contributing diagnosis, use null."
         ),
     )
-    NPPLEWY: int = Field(
+
+    NPPLEWY: Optional[int] = Field(
+        None,
         description=(
             "Lewy body disease listed as the PRIMARY neuropathological diagnosis. "
-            "Codes: 1=Yes, 2=No. "
-            "Encompasses PD, DLB, and PD with dementia when Lewy body pathology "
-            "is the principal finding. "
-            "Code 1 if the report identifies Lewy body disease / DLB / PD as primary. "
-            "If Lewy bodies are incidental or contributing only → code 2 (set NPCLEWY=1). "
-            "Decision rule: identify the PRIMARY diagnosis in the Final Diagnoses section. "
-            "If Lewy body disease / DLB / PD is listed first or explicitly labeled primary → NPPLEWY=1, NPCLEWY=2. "
-            "If another disease is primary and Lewy body pathology is secondary → NPPLEWY=2, NPCLEWY=1. "
-            "If no Lewy body pathology at all → NPPLEWY=2, NPCLEWY=2. "
-            "If your reasoning leads you to code 0 (meaning No/Absent), output 2 instead."
+            "Codes: 1=Yes; 2=No; null=Not stated or not determinable from the report. "
+            "Encompasses PD, DLB, and PD with dementia when Lewy body pathology is the "
+            "principal neuropathological finding. "
+            "Code 1 if the report explicitly identifies Lewy body disease, DLB, or PD "
+            "as the primary or principal diagnosis. "
+            "Code 2 only when the report explicitly establishes that Lewy body disease "
+            "is not the primary diagnosis, including when another disease is explicitly "
+            "identified as primary and Lewy pathology is assigned another role or is absent. "
+            "Do NOT use 2 merely because Lewy body disease is not mentioned. "
+            "If the report does not provide enough information to determine whether Lewy "
+            "body disease is the primary diagnosis, use null."
         ),
     )
-    NPCLEWY: int = Field(
+
+    NPCLEWY: Optional[int] = Field(
+        None,
         description=(
             "Lewy body disease listed as a CONTRIBUTING (secondary) neuropathological diagnosis. "
-            "Codes: 1=Yes, 2=No. "
-            "Code 1 when Lewy body pathology is present but is not the primary diagnosis. "
-            "Common in mixed AD+Lewy body cases. "
-            "Decision rule: if Lewy body disease is the primary diagnosis → NPPLEWY=1 and NPCLEWY=2. "
-            "If Lewy body pathology is secondary to another primary disease → NPPLEWY=2 and NPCLEWY=1. "
-            "If no Lewy body pathology at all → both NPPLEWY=2 and NPCLEWY=2. "
-            "If your reasoning leads you to code 0 (meaning No/Absent), output 2 instead."
+            "Codes: 1=Yes; 2=No; null=Not stated or not determinable from the report. "
+            "Code 1 when Lewy body pathology is explicitly identified as contributing or "
+            "secondary to another primary diagnosis. "
+            "Code 2 only when the report explicitly establishes that Lewy body disease is "
+            "not a contributing diagnosis, including when it is explicitly absent or assigned "
+            "the primary role. "
+            "Do NOT use 2 merely because Lewy body disease is not mentioned. "
+            "If the report does not provide enough information to determine whether Lewy body "
+            "disease is contributing, use null."
         ),
     )
-    NPPVASC: int = Field(
+
+    NPPVASC: Optional[int] = Field(
+        None,
         description=(
             "Vascular disease listed as the PRIMARY (principal) neuropathological diagnosis. "
-            "Codes: 1=Yes (vascular disease is the primary diagnosis), "
-            "2=No (vascular disease is absent or only contributing). "
-            "Code 1 ONLY if the report explicitly names vascular disease, stroke, "
-            "or vascular dementia as the PRIMARY or PRINCIPAL cause of pathology. "
-            "If vascular changes are present but secondary to another disease (e.g., AD with CAA) → code 2. "
-            "Look for: 'primary diagnosis: vascular dementia', 'cerebrovascular disease as principal finding', "
-            "'vascular disease accounting for cognitive decline'. "
-            "DISTINGUISH from NPCVASC (contributing diagnosis)."
+            "Codes: 1=Yes; 2=No; null=Not stated or not determinable from the report. "
+            "Code 1 ONLY if the report explicitly names vascular disease, stroke, or vascular "
+            "dementia as the primary or principal neuropathological diagnosis. "
+            "Code 2 only when the report explicitly establishes that vascular disease is not "
+            "the primary diagnosis, including when another disease is explicitly identified "
+            "as primary and vascular disease is assigned another role or is absent. "
+            "Do NOT use 2 merely because vascular disease is not mentioned. "
+            "If the report does not provide enough information to determine whether vascular "
+            "disease is the primary diagnosis, use null."
         ),
     )
-    NPCVASC: int = Field(
+
+    NPCVASC: Optional[int] = Field(
+        None,
         description=(
             "Vascular disease listed as a CONTRIBUTING (secondary) neuropathological diagnosis. "
-            "Codes: 1=Yes, 2=No. "
-            "Code 1 when vascular pathology contributes to the overall pathological picture "
-            "but is NOT the primary diagnosis (see NPPVASC for primary). "
-            "Common in mixed dementia (e.g., AD + vascular disease). "
-            "Look for: 'contributing vascular disease', 'mixed AD and vascular pathology', "
-            "'cerebrovascular disease as contributing factor'."
+            "Codes: 1=Yes; 2=No; null=Not stated or not determinable from the report. "
+            "Code 1 when vascular pathology is explicitly identified as contributing or "
+            "secondary to another primary diagnosis. "
+            "Code 2 only when the report explicitly establishes that vascular disease is "
+            "not a contributing diagnosis, including when it is explicitly absent or assigned "
+            "the primary role. "
+            "Do NOT use 2 merely because vascular disease is not mentioned. "
+            "If the report does not provide enough information to determine whether vascular "
+            "disease is contributing, use null."
         ),
     )
-    NPPFTLD: int = Field(
+
+    NPPFTLD: Optional[int] = Field(
+        None,
         description=(
             "Frontotemporal lobar degeneration (FTLD) listed as the PRIMARY diagnosis. "
-            "Codes: 1=Yes, 2=No. "
-            "FTLD encompasses FTLD-tau (Pick's, PSP, CBD, AGD) and FTLD-TDP subtypes. "
-            "Code 1 if any FTLD subtype is and should be listed as the principal neuropathological diagnosis. "
-            "Look for: 'FTLD', 'frontotemporal lobar degeneration', as primary diagnosis label. "
-            "CRITICAL: This field uses 1=Yes and 2=No only. Code 0 is not allowed. "
-            "If your reasoning leads you to code 0 (meaning No/Absent), output 2 instead."
+            "Codes: 1=Yes; 2=No; null=Not stated or not determinable from the report. "
+            "FTLD includes FTLD-tau and FTLD-TDP subtypes. "
+            "Code 1 if any FTLD subtype is explicitly identified as the principal "
+            "neuropathological diagnosis. "
+            "Code 2 only when the report explicitly establishes that FTLD is not the "
+            "primary diagnosis, including when another disease is explicitly identified "
+            "as primary and FTLD is assigned another role or is absent. "
+            "Do NOT use 2 merely because FTLD is not mentioned. "
+            "If the report does not provide enough information to determine whether FTLD "
+            "is the primary diagnosis, use null."
         ),
     )
-    NPCFTLD: int = Field(
+
+    NPCFTLD: Optional[int] = Field(
+        None,
         description=(
             "Frontotemporal lobar degeneration (FTLD) listed as the CONTRIBUTING diagnosis. "
-            "Codes: 1=Yes, 2=No. "
-            "Code 1 if FTLD present but not the primary diagnosis."
+            "Codes: 1=Yes; 2=No; null=Not stated or not determinable from the report. "
+            "Code 1 if FTLD is explicitly identified as a contributing or secondary "
+            "neuropathological diagnosis rather than the primary diagnosis. "
+            "Code 2 only when the report explicitly establishes that FTLD is not a "
+            "contributing diagnosis. "
+            "Do NOT use 2 merely because FTLD is not mentioned. "
+            "If the report does not provide enough information to determine whether FTLD "
+            "is contributing, use null."
         ),
     )
 
@@ -739,10 +781,8 @@ class PrimaryContribDx(BaseModel):
     )
     @classmethod
     def val_primary_contrib(cls, v):
-        if v not in {1, 2}:
-            raise ValueError(
-                f"Primary/contributing diagnosis field must be 1 or 2, got {v}"
-            )
+        if v is not None and v not in {1, 2}:
+            raise ValueError(f"Primary/contributing diagnosis field must be 1, 2, or null, got {v}")
         return v
 
     @model_validator(mode="after")
@@ -838,8 +878,30 @@ class Pass1aExtraction(BaseModel):
 
     @model_validator(mode="after")
     def enforce_null_policy(self) -> "Pass1aExtraction":
-        """Non-nullable fields must not be null - use 0, 8, or 9 instead."""
-        nullable = {"NPSEX", "NPFIX", "NPFIXX"}
+        """Enforce extraction-layer null policy.
+
+        Nullable fields:
+          NPSEX, NPFIX, NPFIXX
+          NPPAD, NPCAD
+          NPPLEWY, NPCLEWY
+          NPPVASC, NPCVASC
+          NPPFTLD, NPCFTLD
+        All other variables in this pass must use their explicit NACC-style
+        code for absence, not-assessed, or unknown states."""
+
+        nullable = {
+            "NPSEX",
+            "NPFIX",
+            "NPFIXX",
+            "NPPAD",
+            "NPCAD",
+            "NPPLEWY",
+            "NPCLEWY",
+            "NPPVASC",
+            "NPCVASC",
+            "NPPFTLD",
+            "NPCFTLD",
+        }
         sections = [
             self.specimen_info, self.gross_and_vascular,
             self.microscopic_findings, self.lewy_pathology,
@@ -849,7 +911,9 @@ class Pass1aExtraction(BaseModel):
             for field_name in section.model_fields:
                 if field_name not in nullable and getattr(section, field_name) is None:
                     raise ValueError(
-                        f"{field_name} must not be null - use 0, 8, or 9, etc. instead (depending on variable)."
+                        f"{field_name} must not be null - use its explicit "
+                        "absence, not-assessed, or unknown code as defined for "
+                        "that variable."
                     )
         return self
 
@@ -932,30 +996,47 @@ def build_pass1a_format_instructions() -> str:
         "  NACCLEWY (derive from NPLBOD)",
         "",
         "NULL POLICY:",
-        "  null is valid ONLY for: NPSEX, NPFIX, NPFIXX.",
-        "  For every other variable: use an explicit numeric code - never null.",
-        "  If a finding was assessed and absent → 0",
-        "  If a structure was explicitly not examined or stain not performed → 8",
-        "  If examined or mentioned but severity/result cannot be determined → 9",
+        "  null is valid for:",
+        "    NPSEX, NPFIX, NPFIXX,",
+        "    NPPAD, NPCAD,",
+        "    NPPLEWY, NPCLEWY,",
+        "    NPPVASC, NPCVASC,",
+        "    NPPFTLD, NPCFTLD.",
+        "  For every other variable: use its explicit numeric/code value; never null.",
+        "  IMPORTANT: 'not mentioned' is NOT automatically equivalent to an absent finding.",
+        "  For nullable primary/contributing diagnosis fields:",
+        "    1 = explicitly documented as Yes.",
+        "    2 = explicitly established as No / not that role.",
+        "    null = insufficient information in the report to determine the role.",
+        "  Do NOT use 2 merely because a diagnosis or role is not mentioned.",
+        "  For non-nullable variables, use the variable-specific NACC code for:",
+        "    assessed and absent, not assessed, or unknown/missing.",
         "",
         "SEVERITY LANGUAGE MAPPING:",
         "  'mild' → 1, 'moderate' → 2, 'severe' → 3, 'none/absent/no' → 0",
         "  'mild to moderate' → 2, 'moderate to severe' → 3",
         "",
-        "PRIMARY/CONTRIBUTING DX FIELDS:"
-        "  Use 1=Yes or 2=No only. Never 0.",
-        "  For each disease pair, exactly one field may be 1 and the other must be 2.",
-        "  A disease can be PRIMARY OR CONTRIBUTING, not both.",
-        "  Do not output 1 for both members of any pair.",
+        "PRIMARY/CONTRIBUTING DX FIELDS:",
+        "  Use 1=Yes, 2=No, or null when the field is one of the nullable",
+        "  primary/contributing diagnosis variables.",
+        "  null means the report does not provide sufficient information to",
+        "  determine that specific primary/contributing role.",
+        "  Do NOT convert 'not mentioned' into 2.",
+        "  A primary/contributing pair may therefore contain null.",
+        "  The only prohibited state is both members of the same pair being 1.",
         "  Pairs:",
         "    - AD: NPPAD / NPCAD",
         "    - Lewy body disease: NPPLEWY / NPCLEWY",
         "    - Vascular disease: NPPVASC / NPCVASC",
         "    - FTLD: NPPFTLD / NPCFTLD",
-        "  Use the Final Diagnoses section to decide which role applies.",
-        "  If the report clearly states the disease is primary, set the primary field to 1 and the contributing field to 2.",
-        "  If the report clearly states the disease is contributing/secondary, set the contributing field to 1 and the primary field to 2.",
-        "  If the disease is absent, set both fields to 2.",
+        "  Use the Final Diagnoses section to determine the role whenever the role",
+        "  is explicitly stated.",
+        "  Examples:",
+        "    primary explicitly stated -> primary=1, contributing=2 or null",
+        "    contributing explicitly stated -> primary=2 or null, contributing=1",
+        "    explicitly absent -> primary=2, contributing=2",
+        "    insufficient information -> one or both fields may be null",
+        "  Never output 1 for both members of a pair.",
         "",
     ]
     for name, info in model.model_fields.items():
